@@ -1,4 +1,3 @@
-// Package turn provides types and client for the Turn API
 package turn
 
 import "time"

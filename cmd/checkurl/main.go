@@ -1,3 +1,4 @@
+// Command checkurl checks if a GitHub pull request is blocked by a specific user.
 package main
 
 import (
@@ -5,94 +6,97 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
 
-	"wriia/internal/server"
-	"wriia/pkg/turn"
+	"github.com/ready-to-review/turnclient/pkg/turn"
 )
 
 func main() {
+	// Configure logging
+	logger := log.New(os.Stderr, "[checkurl] ", log.LstdFlags)
+	
 	// Define flags
-	var backend string
-	var username string
-	flag.StringVar(&backend, "backend", "", "Backend to use: 'local' for local server, or URL for remote server")
+	var (
+		backend string
+		username string
+		verbose bool
+	)
+	flag.StringVar(&backend, "backend", "http://localhost:8080", "Backend server URL")
 	flag.StringVar(&username, "user", "", "GitHub username to check (defaults to current authenticated user)")
+	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging")
 	flag.Parse()
+
+	// Configure logger verbosity
+	if !verbose {
+		logger.SetOutput(io.Discard)
+	}
 
 	// Get remaining args (should be the PR URL)
 	args := flag.Args()
 	if len(args) != 1 {
-		fmt.Fprintf(os.Stderr, "Usage: %s [--backend=<local|url>] [--user=<username>] <github-pr-url>\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "Example: %s https://github.com/owner/repo/pull/123\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "Example: %s --backend=local https://github.com/owner/repo/pull/123\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "Example: %s --user=octocat https://github.com/owner/repo/pull/123\n", os.Args[0])
+		printUsage()
 		os.Exit(1)
 	}
 
 	prURL := args[0]
+	logger.Printf("checking PR: %s", prURL)
 
 	// Get GitHub auth token
 	token := getGitHubToken()
 	if token == "" {
-		fmt.Fprintf(os.Stderr, "Warning: No GitHub token found. API requests may be rate limited.\n")
-		fmt.Fprintf(os.Stderr, "To authenticate, run 'gh auth login' or set GITHUB_TOKEN environment variable.\n\n")
+		logger.Println("no GitHub token found")
+		fmt.Fprintln(os.Stderr, "Warning: No GitHub token found. API requests may be rate limited.")
+		fmt.Fprintln(os.Stderr, "To authenticate, run 'gh auth login' or set GITHUB_TOKEN environment variable.")
+		fmt.Fprintln(os.Stderr)
+	} else {
+		logger.Println("GitHub token found")
 	}
 
 	// Determine username - use flag value or get from GitHub API
 	if username == "" {
 		if token == "" {
-			fmt.Fprintf(os.Stderr, "Error: No username specified and no GitHub token available.\n")
-			fmt.Fprintf(os.Stderr, "Either specify --user=<username> or authenticate with GitHub.\n")
+			fmt.Fprintln(os.Stderr, "Error: No username specified and no GitHub token available.")
+			fmt.Fprintln(os.Stderr, "Either specify --user=<username> or authenticate with GitHub.")
 			os.Exit(1)
 		}
 		
+		logger.Println("fetching current user from GitHub API")
+		
 		// Get current user from GitHub API
-		ctx := context.Background()
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		
 		currentUser, err := turn.GetCurrentUser(ctx, token)
 		if err != nil {
+			logger.Printf("failed to get current user: %v", err)
 			fmt.Fprintf(os.Stderr, "Error getting current GitHub user: %v\n", err)
 			os.Exit(1)
 		}
 		username = currentUser
+		logger.Printf("using authenticated user: %s", username)
 		fmt.Printf("Using authenticated user: %s\n\n", username)
-	}
-
-	// Determine server URL
-	var serverURL string
-	var localServer *turn.LocalServer
-
-	if backend == "local" {
-		// Start local server on random port
-		srv := server.New()
-		ls, err := turn.StartLocalServer(srv)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error starting local server: %v\n", err)
-			os.Exit(1)
-		}
-		localServer = ls
-		serverURL = ls.URL()
-		defer func() {
-			// Shutdown server after request
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			localServer.Shutdown(ctx)
-		}()
-	} else if backend != "" {
-		// Use provided backend URL
-		serverURL = backend
-	} else if envURL := os.Getenv("WRIIA_SERVER_URL"); envURL != "" {
-		// Use environment variable
-		serverURL = envURL
 	} else {
-		// Default to localhost:8080
-		serverURL = "http://localhost:8080"
+		logger.Printf("using specified user: %s", username)
 	}
 
 	// Create Turn client
-	client := turn.NewClient(serverURL)
+	logger.Printf("creating client for backend: %s", backend)
+	client, err := turn.NewClient(backend)
+	if err != nil {
+		logger.Printf("failed to create client: %v", err)
+		fmt.Fprintf(os.Stderr, "Error creating client: %v\n", err)
+		os.Exit(1)
+	}
+	
+	if verbose {
+		client.SetLogger(logger)
+	}
+	
 	if token != "" {
 		client.SetAuthToken(token)
 	}
@@ -101,15 +105,20 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	logger.Printf("sending check request")
 	result, err := client.Check(ctx, prURL, username)
 	if err != nil {
+		logger.Printf("check failed: %v", err)
 		fmt.Fprintf(os.Stderr, "Error checking PR: %v\n", err)
 		os.Exit(1)
 	}
 
+	logger.Printf("check successful: status=%d", result.Status)
+
 	// Pretty-print the JSON response
 	prettyJSON, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
+		logger.Printf("failed to format response: %v", err)
 		fmt.Fprintf(os.Stderr, "Error formatting response: %v\n", err)
 		os.Exit(1)
 	}
@@ -117,6 +126,24 @@ func main() {
 	fmt.Println(string(prettyJSON))
 }
 
+// printUsage prints the usage information to stderr.
+func printUsage() {
+	progName := os.Args[0]
+	fmt.Fprintf(os.Stderr, "Usage: %s [options] <github-pr-url>\n\n", progName)
+	fmt.Fprintf(os.Stderr, "Options:\n")
+	fmt.Fprintf(os.Stderr, "  --backend=<url>    Backend server URL (default: http://localhost:8080)\n")
+	fmt.Fprintf(os.Stderr, "  --user=<username>  GitHub username to check (default: current authenticated user)\n")
+	fmt.Fprintf(os.Stderr, "  --verbose          Enable verbose logging\n")
+	fmt.Fprintf(os.Stderr, "\nExamples:\n")
+	fmt.Fprintf(os.Stderr, "  %s https://github.com/owner/repo/pull/123\n", progName)
+	fmt.Fprintf(os.Stderr, "  %s --backend=https://api.example.com https://github.com/owner/repo/pull/123\n", progName)
+	fmt.Fprintf(os.Stderr, "  %s --user=octocat https://github.com/owner/repo/pull/123\n", progName)
+	fmt.Fprintf(os.Stderr, "  %s --verbose https://github.com/owner/repo/pull/123\n", progName)
+}
+
+// getGitHubToken attempts to retrieve a GitHub authentication token.
+// It first checks the GITHUB_TOKEN environment variable, then falls back
+// to using the gh CLI tool if available.
 func getGitHubToken() string {
 	// First, try environment variable
 	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
