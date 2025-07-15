@@ -33,8 +33,6 @@ type CheckResponse struct {
 	// PR metrics
 	CommentCount       int `json:"comment_count"`        // Total comments on PR
 	ReviewCount        int `json:"review_count"`         // Number of reviews
-	CommitCount        int `json:"commit_count"`         // Number of commits
-	ChangedFilesCount  int `json:"changed_files_count"`  // Number of files changed
 	
 	// Status flags
 	MergeConflict      bool `json:"merge_conflict"`       // PR has merge conflicts
@@ -43,4 +41,7 @@ type CheckResponse struct {
 	ChangesRequested   bool `json:"changes_requested"`    // Changes have been requested
 	AllChecksPassing   bool `json:"all_checks_passing"`   // All CI checks are passing
 	ReadyToMerge       bool `json:"ready_to_merge"`       // PR can be merged
+	
+	// Tags - string representation of status flags for easier filtering/display
+	Tags []string `json:"tags"` // e.g., ["draft", "merge_conflict", "has_approval"]
 }

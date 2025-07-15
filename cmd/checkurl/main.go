@@ -16,9 +16,15 @@ import (
 	"github.com/ready-to-review/turnclient/pkg/turn"
 )
 
+const (
+	defaultBackend  = "http://localhost:8080"
+	requestTimeout  = 30 * time.Second
+	userAuthTimeout = 10 * time.Second
+)
+
 func main() {
 	// Configure logging
-	logger := log.New(os.Stderr, "[checkurl] ", log.LstdFlags)
+	logger := log.New(os.Stderr, "[checkurl] ", log.LstdFlags|log.Lshortfile)
 	
 	// Define flags
 	var (
@@ -26,7 +32,7 @@ func main() {
 		username string
 		verbose bool
 	)
-	flag.StringVar(&backend, "backend", "http://localhost:8080", "Backend server URL")
+	flag.StringVar(&backend, "backend", defaultBackend, "Backend server URL")
 	flag.StringVar(&username, "user", "", "GitHub username to check (defaults to current authenticated user)")
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose logging")
 	flag.Parse()
@@ -50,8 +56,14 @@ func main() {
 	token := getGitHubToken()
 	if token == "" {
 		logger.Println("no GitHub token found")
+		if username == "" {
+			// Token is required when no username is specified
+			fmt.Fprintln(os.Stderr, "Error: No GitHub token found and no username specified.")
+			fmt.Fprintln(os.Stderr, "To authenticate, run 'gh auth login' or set GITHUB_TOKEN environment variable.")
+			fmt.Fprintln(os.Stderr, "Alternatively, specify --user=<username> to check a specific user.")
+			os.Exit(1)
+		}
 		fmt.Fprintln(os.Stderr, "Warning: No GitHub token found. API requests may be rate limited.")
-		fmt.Fprintln(os.Stderr, "To authenticate, run 'gh auth login' or set GITHUB_TOKEN environment variable.")
 		fmt.Fprintln(os.Stderr)
 	} else {
 		logger.Println("GitHub token found")
@@ -68,7 +80,7 @@ func main() {
 		logger.Println("fetching current user from GitHub API")
 		
 		// Get current user from GitHub API
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), userAuthTimeout)
 		defer cancel()
 		
 		currentUser, err := turn.GetCurrentUser(ctx, token)
@@ -102,7 +114,7 @@ func main() {
 	}
 
 	// Make the check request
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
 	defer cancel()
 
 	logger.Printf("sending check request")
@@ -124,6 +136,12 @@ func main() {
 	}
 
 	fmt.Println(string(prettyJSON))
+	
+	// Exit with appropriate code
+	if result.Status == 1 {
+		os.Exit(1) // User is blocked
+	}
+	os.Exit(0) // User is not blocked
 }
 
 // printUsage prints the usage information to stderr.
@@ -147,11 +165,17 @@ func printUsage() {
 func getGitHubToken() string {
 	// First, try environment variable
 	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
-		return token
+		return strings.TrimSpace(token)
+	}
+	
+	// Also check GH_TOKEN (used by GitHub CLI)
+	if token := os.Getenv("GH_TOKEN"); token != "" {
+		return strings.TrimSpace(token)
 	}
 
-	// Second, try gh auth token command
+	// Try gh auth token command
 	cmd := exec.Command("gh", "auth", "token")
+	cmd.Stderr = io.Discard // Suppress error output
 	output, err := cmd.Output()
 	if err != nil {
 		return ""

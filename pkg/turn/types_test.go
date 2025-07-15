@@ -54,14 +54,13 @@ func TestCheckResponseJSON(t *testing.T) {
 		TestsFailing:      1,
 		CommentCount:      5,
 		ReviewCount:       3,
-		CommitCount:       7,
-		ChangedFilesCount: 15,
 		MergeConflict:     false,
 		IsDraft:           false,
 		HasApproval:       true,
 		ChangesRequested:  false,
 		AllChecksPassing:  false,
 		ReadyToMerge:      false,
+		Tags:              []string{"has_approval"},
 	}
 
 	data, err := json.Marshal(resp)

@@ -14,6 +14,12 @@ import (
 	"time"
 )
 
+const (
+	defaultTimeout = 30 * time.Second
+	maxURLLength   = 2048
+	userAgent      = "turnclient/1.0"
+)
+
 // Client communicates with the Turn API.
 type Client struct {
 	baseURL    string
@@ -25,6 +31,14 @@ type Client struct {
 // NewClient creates a new Turn API client.
 // The baseURL should be a valid HTTP(S) URL without trailing slash.
 func NewClient(baseURL string) (*Client, error) {
+	if baseURL == "" {
+		return nil, fmt.Errorf("base URL cannot be empty")
+	}
+	
+	if len(baseURL) > maxURLLength {
+		return nil, fmt.Errorf("base URL too long (max %d characters)", maxURLLength)
+	}
+	
 	// Validate and normalize the base URL
 	parsedURL, err := url.Parse(baseURL)
 	if err != nil {
@@ -35,22 +49,35 @@ func NewClient(baseURL string) (*Client, error) {
 		return nil, fmt.Errorf("base URL must use http or https scheme")
 	}
 	
+	if parsedURL.Host == "" {
+		return nil, fmt.Errorf("base URL must include host")
+	}
+	
 	// Remove trailing slash for consistency
 	baseURL = strings.TrimRight(baseURL, "/")
 	
 	return &Client{
 		baseURL: baseURL,
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: defaultTimeout,
+			Transport: &http.Transport{
+				MaxIdleConns:        10,
+				IdleConnTimeout:     30 * time.Second,
+				DisableCompression:  true,
+				TLSHandshakeTimeout: 10 * time.Second,
+			},
 		},
-		logger: log.New(io.Discard, "[turn-client] ", log.LstdFlags),
+		logger: log.New(io.Discard, "[turn-client] ", log.LstdFlags|log.Lshortfile),
 	}, nil
 }
 
 // SetAuthToken sets the GitHub authentication token.
 func (c *Client) SetAuthToken(token string) {
+	if token == "" {
+		c.logger.Println("warning: setting empty auth token")
+	}
 	c.authToken = token
-	c.logger.Println("auth token set")
+	c.logger.Println("auth token updated")
 }
 
 // SetLogger sets a custom logger for the client.
@@ -70,7 +97,10 @@ func (c *Client) Check(ctx context.Context, prURL, username string) (*CheckRespo
 		return nil, fmt.Errorf("username cannot be empty")
 	}
 	
-	c.logger.Printf("checking PR %s for user %s", prURL, username)
+	// Log sanitized values to prevent log injection
+	safePR := sanitizeForLog(prURL)
+	safeUser := sanitizeForLog(username)
+	c.logger.Printf("checking PR %s for user %s", safePR, safeUser)
 	
 	req := CheckRequest{
 		URL:      prURL,
@@ -89,7 +119,8 @@ func (c *Client) Check(ctx context.Context, prURL, username string) (*CheckRespo
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("User-Agent", "turnclient/1.0")
+	httpReq.Header.Set("User-Agent", userAgent)
+	httpReq.Header.Set("Accept", "application/json")
 	if c.authToken != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+c.authToken)
 	}
@@ -101,7 +132,9 @@ func (c *Client) Check(ctx context.Context, prURL, username string) (*CheckRespo
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	// Limit response body to prevent memory exhaustion
+	limitedReader := io.LimitReader(resp.Body, 1024*1024) // 1MB limit
+	body, err := io.ReadAll(limitedReader)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
@@ -134,7 +167,7 @@ func GetCurrentUser(ctx context.Context, token string) (string, error) {
 	}
 
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	req.Header.Set("User-Agent", "turnclient/1.0")
+	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -145,7 +178,8 @@ func GetCurrentUser(ctx context.Context, token string) (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		limitedReader := io.LimitReader(resp.Body, 1024*1024) // 1MB limit
+		body, _ := io.ReadAll(limitedReader)
 		return "", fmt.Errorf("GitHub API returned %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -161,5 +195,29 @@ func GetCurrentUser(ctx context.Context, token string) (string, error) {
 	}
 
 	return user.Login, nil
+}
+
+// sanitizeForLog removes newlines and control characters to prevent log injection.
+func sanitizeForLog(input string) string {
+	// Replace newlines and carriage returns
+	sanitized := strings.ReplaceAll(input, "\n", "\\n")
+	sanitized = strings.ReplaceAll(sanitized, "\r", "\\r")
+	
+	// Remove other control characters
+	var result strings.Builder
+	for _, r := range sanitized {
+		if r >= 32 && r != 127 {
+			result.WriteRune(r)
+		}
+	}
+	
+	// Limit length to prevent log flooding
+	output := result.String()
+	const maxLen = 100
+	if len(output) > maxLen {
+		output = output[:maxLen-3] + "..."
+	}
+	
+	return output
 }
 
