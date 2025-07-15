@@ -83,7 +83,7 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), userAuthTimeout)
 		defer cancel()
 		
-		currentUser, err := turn.GetCurrentUser(ctx, token)
+		currentUser, err := turn.CurrentUser(ctx, token)
 		if err != nil {
 			logger.Printf("failed to get current user: %v", err)
 			fmt.Fprintf(os.Stderr, "Error getting current GitHub user: %v\n", err)
@@ -118,7 +118,7 @@ func main() {
 	defer cancel()
 
 	logger.Printf("sending check request")
-	result, err := client.Check(ctx, prURL, username)
+	result, err := client.Check(ctx, prURL, username, time.Now())
 	if err != nil {
 		logger.Printf("check failed: %v", err)
 		fmt.Fprintf(os.Stderr, "Error checking PR: %v\n", err)

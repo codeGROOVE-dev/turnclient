@@ -87,8 +87,8 @@ func (c *Client) SetLogger(logger *log.Logger) {
 	}
 }
 
-// Check performs a PR check to see if it's blocked by the specified user.
-func (c *Client) Check(ctx context.Context, prURL, username string) (*CheckResponse, error) {
+// Check performs a PR check with a known PR update timestamp for caching.
+func (c *Client) Check(ctx context.Context, prURL, username string, updatedAt time.Time) (*CheckResponse, error) {
 	// Validate inputs
 	if prURL == "" {
 		return nil, fmt.Errorf("PR URL cannot be empty")
@@ -96,15 +96,19 @@ func (c *Client) Check(ctx context.Context, prURL, username string) (*CheckRespo
 	if username == "" {
 		return nil, fmt.Errorf("username cannot be empty")
 	}
+	if updatedAt.IsZero() {
+		return nil, fmt.Errorf("updated_at timestamp cannot be zero")
+	}
 	
 	// Log sanitized values to prevent log injection
 	safePR := sanitizeForLog(prURL)
 	safeUser := sanitizeForLog(username)
-	c.logger.Printf("checking PR %s for user %s", safePR, safeUser)
+	c.logger.Printf("checking PR %s for user %s (updated: %s)", safePR, safeUser, updatedAt.Format(time.RFC3339))
 	
 	req := CheckRequest{
-		URL:      prURL,
-		Username: username,
+		URL:       prURL,
+		Username:  username,
+		UpdatedAt: updatedAt,
 	}
 
 	jsonData, err := json.Marshal(req)
@@ -154,9 +158,9 @@ func (c *Client) Check(ctx context.Context, prURL, username string) (*CheckRespo
 	return &result, nil
 }
 
-// GetCurrentUser gets the current authenticated GitHub user.
+// CurrentUser gets the current authenticated GitHub user.
 // This is a package-level function as it doesn't require a Turn API client.
-func GetCurrentUser(ctx context.Context, token string) (string, error) {
+func CurrentUser(ctx context.Context, token string) (string, error) {
 	if token == "" {
 		return "", fmt.Errorf("token cannot be empty")
 	}

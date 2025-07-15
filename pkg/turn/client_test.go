@@ -184,7 +184,7 @@ func TestClient_Check(t *testing.T) {
 
 			// Perform check
 			ctx := context.Background()
-			result, err := client.Check(ctx, tt.prURL, tt.username)
+			result, err := client.Check(ctx, tt.prURL, tt.username, time.Now())
 
 			// Verify results
 			if (err != nil) != tt.wantErr {
@@ -238,7 +238,7 @@ func TestClient_CheckWithAuth(t *testing.T) {
 	client.SetAuthToken(token)
 
 	ctx := context.Background()
-	_, err = client.Check(ctx, "https://github.com/owner/repo/pull/123", "testuser")
+	_, err = client.Check(ctx, "https://github.com/owner/repo/pull/123", "testuser", time.Now())
 	if err != nil {
 		t.Errorf("Check() with auth failed: %v", err)
 	}
@@ -262,13 +262,13 @@ func TestClient_CheckTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 
-	_, err = client.Check(ctx, "https://github.com/owner/repo/pull/123", "testuser")
+	_, err = client.Check(ctx, "https://github.com/owner/repo/pull/123", "testuser", time.Now())
 	if err == nil {
 		t.Error("expected timeout error, got nil")
 	}
 }
 
-func TestGetCurrentUser(t *testing.T) {
+func TestCurrentUser(t *testing.T) {
 	tests := []struct {
 		name         string
 		token        string
@@ -346,21 +346,21 @@ func TestGetCurrentUser(t *testing.T) {
 			}
 
 			ctx := context.Background()
-			result, err := GetCurrentUser(ctx, tt.token)
+			result, err := CurrentUser(ctx, tt.token)
 
 			if (err != nil) != tt.wantErr {
-				t.Errorf("GetCurrentUser() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("CurrentUser() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 
 			if err != nil && tt.errorMessage != "" {
 				if !strings.Contains(err.Error(), tt.errorMessage) {
-					t.Errorf("GetCurrentUser() error = %v, want error containing %q", err, tt.errorMessage)
+					t.Errorf("CurrentUser() error = %v, want error containing %q", err, tt.errorMessage)
 				}
 			}
 
 			if !tt.wantErr && tt.token != "" && result != tt.username {
-				t.Errorf("GetCurrentUser() = %s, want %s", result, tt.username)
+				t.Errorf("CurrentUser() = %s, want %s", result, tt.username)
 			}
 		})
 	}

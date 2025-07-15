@@ -4,8 +4,9 @@ import "time"
 
 // CheckRequest represents a request to check if a PR is blocked by a user
 type CheckRequest struct {
-	URL      string `json:"url"`
-	Username string `json:"username"`
+	URL        string    `json:"url"`
+	Username   string    `json:"username"`
+	UpdatedAt  time.Time `json:"updated_at"`  // Last known update time of the PR (required)
 }
 
 // CheckResponse represents the response from a PR check
