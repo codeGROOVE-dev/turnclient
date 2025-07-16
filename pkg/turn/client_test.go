@@ -85,9 +85,10 @@ func TestClient_Check(t *testing.T) {
 			prURL:    "https://github.com/owner/repo/pull/123",
 			username: "testuser",
 			response: CheckResponse{
-				Status:       0,
-				StatusString: "not blocked",
-				BlockedBy:    []string{},
+				NextAction:         map[string]Action{},
+				FailingTests:       0,
+				UnresolvedComments: 0,
+				ReadyToMerge:       true,
 			},
 			statusCode: http.StatusOK,
 			wantErr:    false,
@@ -97,10 +98,12 @@ func TestClient_Check(t *testing.T) {
 			prURL:    "https://github.com/owner/repo/pull/456",
 			username: "testuser",
 			response: CheckResponse{
-				Status:       1,
-				StatusString: "blocked",
-				BlockedBy:    []string{"testuser"},
-				Reason:       "awaiting review",
+				NextAction: map[string]Action{
+					"testuser": {Kind: "REVIEW", CriticalPath: true},
+				},
+				FailingTests:       0,
+				UnresolvedComments: 0,
+				ReadyToMerge:       false,
 			},
 			statusCode: http.StatusOK,
 			wantErr:    false,
@@ -111,13 +114,6 @@ func TestClient_Check(t *testing.T) {
 			username:     "testuser",
 			wantErr:      true,
 			errorMessage: "PR URL cannot be empty",
-		},
-		{
-			name:         "empty username",
-			prURL:        "https://github.com/owner/repo/pull/123",
-			username:     "",
-			wantErr:      true,
-			errorMessage: "username cannot be empty",
 		},
 		{
 			name:         "server error",
@@ -184,7 +180,7 @@ func TestClient_Check(t *testing.T) {
 
 			// Perform check
 			ctx := context.Background()
-			result, err := client.Check(ctx, tt.prURL, tt.username, time.Now())
+			result, err := client.Check(ctx, tt.prURL, time.Now())
 
 			// Verify results
 			if (err != nil) != tt.wantErr {
@@ -199,11 +195,11 @@ func TestClient_Check(t *testing.T) {
 			}
 
 			if !tt.wantErr && result != nil {
-				if result.Status != tt.response.Status {
-					t.Errorf("Status = %d, want %d", result.Status, tt.response.Status)
+				if len(result.NextAction) != len(tt.response.NextAction) {
+					t.Errorf("NextAction length = %d, want %d", len(result.NextAction), len(tt.response.NextAction))
 				}
-				if result.StatusString != tt.response.StatusString {
-					t.Errorf("StatusString = %s, want %s", result.StatusString, tt.response.StatusString)
+				if result.ReadyToMerge != tt.response.ReadyToMerge {
+					t.Errorf("ReadyToMerge = %v, want %v", result.ReadyToMerge, tt.response.ReadyToMerge)
 				}
 			}
 		})
@@ -224,8 +220,10 @@ func TestClient_CheckWithAuth(t *testing.T) {
 		// Send success response
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(CheckResponse{
-			Status:       0,
-			StatusString: "not blocked",
+			NextAction:         map[string]Action{},
+			FailingTests:       0,
+			UnresolvedComments: 0,
+			ReadyToMerge:       true,
 		})
 	}))
 	defer server.Close()
@@ -238,7 +236,7 @@ func TestClient_CheckWithAuth(t *testing.T) {
 	client.SetAuthToken(token)
 
 	ctx := context.Background()
-	_, err = client.Check(ctx, "https://github.com/owner/repo/pull/123", "testuser", time.Now())
+	_, err = client.Check(ctx, "https://github.com/owner/repo/pull/123", time.Now())
 	if err != nil {
 		t.Errorf("Check() with auth failed: %v", err)
 	}
@@ -262,7 +260,7 @@ func TestClient_CheckTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 
-	_, err = client.Check(ctx, "https://github.com/owner/repo/pull/123", "testuser", time.Now())
+	_, err = client.Check(ctx, "https://github.com/owner/repo/pull/123", time.Now())
 	if err == nil {
 		t.Error("expected timeout error, got nil")
 	}

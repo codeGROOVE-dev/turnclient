@@ -69,32 +69,6 @@ func main() {
 		logger.Println("GitHub token found")
 	}
 
-	// Determine username - use flag value or get from GitHub API
-	if username == "" {
-		if token == "" {
-			fmt.Fprintln(os.Stderr, "Error: No username specified and no GitHub token available.")
-			fmt.Fprintln(os.Stderr, "Either specify --user=<username> or authenticate with GitHub.")
-			os.Exit(1)
-		}
-		
-		logger.Println("fetching current user from GitHub API")
-		
-		// Get current user from GitHub API
-		ctx, cancel := context.WithTimeout(context.Background(), userAuthTimeout)
-		defer cancel()
-		
-		currentUser, err := turn.CurrentUser(ctx, token)
-		if err != nil {
-			logger.Printf("failed to get current user: %v", err)
-			fmt.Fprintf(os.Stderr, "Error getting current GitHub user: %v\n", err)
-			os.Exit(1)
-		}
-		username = currentUser
-		logger.Printf("using authenticated user: %s", username)
-		fmt.Printf("Using authenticated user: %s\n\n", username)
-	} else {
-		logger.Printf("using specified user: %s", username)
-	}
 
 	// Create Turn client
 	logger.Printf("creating client for backend: %s", backend)
@@ -118,14 +92,23 @@ func main() {
 	defer cancel()
 
 	logger.Printf("sending check request")
-	result, err := client.Check(ctx, prURL, username, time.Now())
+	result, err := client.Check(ctx, prURL, time.Now())
 	if err != nil {
 		logger.Printf("check failed: %v", err)
 		fmt.Fprintf(os.Stderr, "Error checking PR: %v\n", err)
 		os.Exit(1)
 	}
 
-	logger.Printf("check successful: status=%d", result.Status)
+	// Show all actions and their critical path status
+	totalActions := len(result.NextAction)
+	criticalActions := 0
+	for _, action := range result.NextAction {
+		if action.CriticalPath {
+			criticalActions++
+		}
+	}
+	
+	logger.Printf("check successful: %d total actions (%d critical)", totalActions, criticalActions)
 
 	// Pretty-print the JSON response
 	prettyJSON, err := json.MarshalIndent(result, "", "  ")
@@ -138,10 +121,10 @@ func main() {
 	fmt.Println(string(prettyJSON))
 	
 	// Exit with appropriate code
-	if result.Status == 1 {
-		os.Exit(1) // User is blocked
+	if totalActions > 0 {
+		os.Exit(1) // Actions pending
 	}
-	os.Exit(0) // User is not blocked
+	os.Exit(0) // Ready to merge
 }
 
 // printUsage prints the usage information to stderr.

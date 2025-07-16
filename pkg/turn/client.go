@@ -88,13 +88,10 @@ func (c *Client) SetLogger(logger *log.Logger) {
 }
 
 // Check performs a PR check with a known PR update timestamp for caching.
-func (c *Client) Check(ctx context.Context, prURL, username string, updatedAt time.Time) (*CheckResponse, error) {
+func (c *Client) Check(ctx context.Context, prURL string, updatedAt time.Time) (*CheckResponse, error) {
 	// Validate inputs
 	if prURL == "" {
 		return nil, fmt.Errorf("PR URL cannot be empty")
-	}
-	if username == "" {
-		return nil, fmt.Errorf("username cannot be empty")
 	}
 	if updatedAt.IsZero() {
 		return nil, fmt.Errorf("updated_at timestamp cannot be zero")
@@ -102,12 +99,10 @@ func (c *Client) Check(ctx context.Context, prURL, username string, updatedAt ti
 	
 	// Log sanitized values to prevent log injection
 	safePR := sanitizeForLog(prURL)
-	safeUser := sanitizeForLog(username)
-	c.logger.Printf("checking PR %s for user %s (updated: %s)", safePR, safeUser, updatedAt.Format(time.RFC3339))
+	c.logger.Printf("checking PR %s (updated: %s)", safePR, updatedAt.Format(time.RFC3339))
 	
 	req := CheckRequest{
 		URL:       prURL,
-		Username:  username,
 		UpdatedAt: updatedAt,
 	}
 
@@ -154,7 +149,7 @@ func (c *Client) Check(ctx context.Context, prURL, username string, updatedAt ti
 		return nil, fmt.Errorf("unmarshal response: %w", err)
 	}
 
-	c.logger.Printf("check complete: status=%d (%s)", result.Status, result.StatusString)
+	c.logger.Printf("check complete: %d actions assigned", len(result.NextAction))
 	return &result, nil
 }
 

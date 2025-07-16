@@ -8,8 +8,8 @@ import (
 
 func TestCheckRequestJSON(t *testing.T) {
 	req := CheckRequest{
-		URL:      "https://github.com/owner/repo/pull/123",
-		Username: "testuser",
+		URL:       "https://github.com/owner/repo/pull/123",
+		UpdatedAt: time.Now(),
 	}
 
 	data, err := json.Marshal(req)
@@ -25,19 +25,19 @@ func TestCheckRequestJSON(t *testing.T) {
 	if decoded.URL != req.URL {
 		t.Errorf("URL = %s, want %s", decoded.URL, req.URL)
 	}
-	if decoded.Username != req.Username {
-		t.Errorf("Username = %s, want %s", decoded.Username, req.Username)
+	if !decoded.UpdatedAt.Equal(req.UpdatedAt) {
+		t.Errorf("UpdatedAt = %v, want %v", decoded.UpdatedAt, req.UpdatedAt)
 	}
 }
 
 func TestCheckResponseJSON(t *testing.T) {
 	now := time.Now()
 	resp := CheckResponse{
-		Status:       1,
-		StatusString: "blocked",
-		BlockedBy:    []string{"user1", "user2"},
-		Reason:       "awaiting review",
-		NextAction:   "review required",
+		NextAction: map[string]Action{
+			"user1": {Kind: "REVIEW", CriticalPath: true},
+			"user2": {Kind: "APPROVE", CriticalPath: false},
+		},
+		UpdatedAt: now,
 		RecentActivity: struct {
 			Type      string    `json:"type"`
 			Author    string    `json:"author"`
@@ -49,18 +49,11 @@ func TestCheckResponseJSON(t *testing.T) {
 			Message:   "Please review",
 			Timestamp: now,
 		},
-		TestsPassing:      10,
-		TestsPending:      2,
-		TestsFailing:      1,
-		CommentCount:      5,
-		ReviewCount:       3,
-		MergeConflict:     false,
-		IsDraft:           false,
-		HasApproval:       true,
-		ChangesRequested:  false,
-		AllChecksPassing:  false,
-		ReadyToMerge:      false,
-		Tags:              []string{"has_approval"},
+		FailingTests:       2,
+		UnresolvedComments: 1,
+		IsDraft:            false,
+		ReadyToMerge:       false,
+		Tags:               []string{"has_approval"},
 	}
 
 	data, err := json.Marshal(resp)
@@ -74,14 +67,17 @@ func TestCheckResponseJSON(t *testing.T) {
 	}
 
 	// Verify core fields
-	if decoded.Status != resp.Status {
-		t.Errorf("Status = %d, want %d", decoded.Status, resp.Status)
+	if len(decoded.NextAction) != len(resp.NextAction) {
+		t.Errorf("NextAction length = %d, want %d", len(decoded.NextAction), len(resp.NextAction))
 	}
-	if decoded.StatusString != resp.StatusString {
-		t.Errorf("StatusString = %s, want %s", decoded.StatusString, resp.StatusString)
-	}
-	if len(decoded.BlockedBy) != len(resp.BlockedBy) {
-		t.Errorf("BlockedBy length = %d, want %d", len(decoded.BlockedBy), len(resp.BlockedBy))
+	for user, action := range resp.NextAction {
+		decodedAction := decoded.NextAction[user]
+		if decodedAction.Kind != action.Kind {
+			t.Errorf("NextAction[%s].Kind = %s, want %s", user, decodedAction.Kind, action.Kind)
+		}
+		if decodedAction.CriticalPath != action.CriticalPath {
+			t.Errorf("NextAction[%s].CriticalPath = %v, want %v", user, decodedAction.CriticalPath, action.CriticalPath)
+		}
 	}
 
 	// Verify recent activity
@@ -89,19 +85,19 @@ func TestCheckResponseJSON(t *testing.T) {
 		t.Errorf("RecentActivity.Type = %s, want %s", decoded.RecentActivity.Type, resp.RecentActivity.Type)
 	}
 
-	// Verify metrics
-	if decoded.TestsPassing != resp.TestsPassing {
-		t.Errorf("TestsPassing = %d, want %d", decoded.TestsPassing, resp.TestsPassing)
+	// Verify debugging info
+	if decoded.FailingTests != resp.FailingTests {
+		t.Errorf("FailingTests = %d, want %d", decoded.FailingTests, resp.FailingTests)
 	}
-	if decoded.CommentCount != resp.CommentCount {
-		t.Errorf("CommentCount = %d, want %d", decoded.CommentCount, resp.CommentCount)
+	if decoded.UnresolvedComments != resp.UnresolvedComments {
+		t.Errorf("UnresolvedComments = %d, want %d", decoded.UnresolvedComments, resp.UnresolvedComments)
 	}
-
+	
 	// Verify flags
-	if decoded.HasApproval != resp.HasApproval {
-		t.Errorf("HasApproval = %v, want %v", decoded.HasApproval, resp.HasApproval)
-	}
 	if decoded.ReadyToMerge != resp.ReadyToMerge {
 		t.Errorf("ReadyToMerge = %v, want %v", decoded.ReadyToMerge, resp.ReadyToMerge)
+	}
+	if decoded.IsDraft != resp.IsDraft {
+		t.Errorf("IsDraft = %v, want %v", decoded.IsDraft, resp.IsDraft)
 	}
 }
