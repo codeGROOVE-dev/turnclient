@@ -29,6 +29,11 @@ type CheckResponse struct {
 	// Debugging info
 	FailingTests       int `json:"failing_tests"`       // Number of failing tests
 	UnresolvedComments int `json:"unresolved_comments"` // Number of unresolved PR comments
+	
+	// Size information
+	Additions int    `json:"additions"` // Number of lines added
+	Deletions int    `json:"deletions"` // Number of lines deleted
+	Size      string `json:"size"`      // Size classification (XXS, XS, S, M, L, XL, XXL, INSANE)
 
 	// Status flags
 	IsDraft      bool `json:"is_draft"`       // PR is in draft state
