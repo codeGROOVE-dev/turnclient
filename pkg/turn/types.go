@@ -25,17 +25,23 @@ type LastActivity struct {
 	Timestamp time.Time `json:"timestamp"` // When it happened
 }
 
+type Checks struct {
+	Total   int `json:'total"`   // number of checks associated to this PR
+	Failing int `json:"failing"` // number of checks that failed
+	Waiting int `json:"waiting"` // waiting for a deployment protection rule to be satisfied.
+	Pending int `json:"pending"` // Pending execution (effectively: total - failing - waiting - passing)
+	Passing int `json:"passing"` // Number of checks that passed
+	Ignored int `json:"ignored"` // Number of failing tests we ignored
+}
+
 // PRState represents the current state of a PR.
 type PRState struct {
 	UnblockAction map[string]Action `json:"unblock_action"` // Next action expected from each user
 	UpdatedAt     time.Time         `json:"updated_at"`     // Last time the PR was updated
 	LastActivity  LastActivity      `json:"last_activity"`  // Most recent activity
 
-	// Test counts
-	FailingTests       int `json:"failing_tests"`
-	PendingTests       int `json:"pending_tests"`
-	PassingTests       int `json:"passing_tests"`
-	UnresolvedComments int `json:"unresolved_comments"`
+	Checks             Checks `json:"checks"` // Check states
+	UnresolvedComments int    `json:"unresolved_comments"`
 
 	Size string `json:"size"` // XXS, XS, S, M, L, XL, XXL, INSANE
 
