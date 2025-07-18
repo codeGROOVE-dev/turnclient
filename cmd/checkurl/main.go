@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -23,59 +22,73 @@ const (
 )
 
 func main() {
-	backend := flag.String("backend", defaultBackend, "Backend server URL")
-	username := flag.String("user", "", "GitHub username to check (defaults to current authenticated user)")
-	verbose := flag.Bool("verbose", false, "Enable verbose logging")
+	var cfg config
+	flag.StringVar(&cfg.backend, "backend", defaultBackend, "Backend server URL")
+	flag.StringVar(&cfg.username, "user", "", "GitHub username to check (defaults to current authenticated user)")
+	flag.BoolVar(&cfg.verbose, "verbose", false, "Enable verbose logging")
 	flag.Parse()
 
-	logger := log.New(os.Stderr, "[checkurl] ", log.LstdFlags|log.Lshortfile)
-	if !*verbose {
-		logger.SetOutput(io.Discard)
-	}
-
-	args := flag.Args()
-	if len(args) != 1 {
+	if flag.NArg() != 1 {
 		printUsage()
 		os.Exit(1)
 	}
+	cfg.prURL = flag.Arg(0)
 
-	prURL := args[0]
-	logger.Printf("checking PR: %s", prURL)
-
-	token := getGitHubToken()
-	if token == "" {
-		logger.Println("no GitHub token found")
-		if *username == "" {
-			fmt.Fprintln(os.Stderr, "error: no GitHub token found and no username specified")
-			fmt.Fprintln(os.Stderr, "To authenticate, run 'gh auth login' or set GITHUB_TOKEN environment variable.")
-			fmt.Fprintln(os.Stderr, "Alternatively, specify --user=<username> to check a specific user.")
-			os.Exit(1)
-		}
-		fmt.Fprintln(os.Stderr, "warning: no GitHub token found, API requests may be rate limited")
-		fmt.Fprintln(os.Stderr)
-	} else {
-		logger.Println("GitHub token found")
-		if *username == "" {
-			user, err := getCurrentUser(token)
-			if err != nil {
-				logger.Printf("failed to auto-detect user: %v", err)
-				fmt.Fprintf(os.Stderr, "error: failed to auto-detect GitHub user: %v\n", err)
-				fmt.Fprintln(os.Stderr, "Please specify --user=<username> to check a specific user.")
-				os.Exit(1)
-			}
-			*username = user
-			logger.Printf("auto-detected user: %s", *username)
-		}
-	}
-
-	logger.Printf("creating client for backend: %s", *backend)
-	client, err := turn.NewClient(*backend)
-	if err != nil {
-		logger.Printf("failed to create client: %v", err)
-		fmt.Fprintf(os.Stderr, "error creating client: %v\n", err)
+	if err := run(cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
-	if *verbose {
+}
+
+type config struct {
+	backend  string
+	username string
+	verbose  bool
+	prURL    string
+}
+
+func run(cfg config) error {
+	var logger *log.Logger
+	if cfg.verbose {
+		logger = log.New(os.Stderr, "[checkurl] ", log.LstdFlags|log.Lshortfile)
+	} else {
+		logger = log.New(io.Discard, "", 0)
+	}
+
+	logger.Printf("checking PR: %s", cfg.prURL)
+
+	token := gitHubToken()
+	if token == "" {
+		logger.Println("no GitHub token found")
+		if cfg.username == "" {
+			return fmt.Errorf("no GitHub token found and no username specified\n" +
+				"To authenticate, run 'gh auth login' or set GITHUB_TOKEN environment variable.\n" +
+				"Alternatively, specify --user=<username> to check a specific user.")
+		}
+		fmt.Fprintln(os.Stderr, "warning: no GitHub token found, API requests may be rate limited\n")
+	} else {
+		logger.Println("GitHub token found")
+		if cfg.username == "" {
+			ctx, cancel := context.WithTimeout(context.Background(), userAuthTimeout)
+			defer cancel()
+			user, err := turn.CurrentUser(ctx, token)
+			if err != nil {
+				logger.Printf("failed to auto-detect user: %v", err)
+				return fmt.Errorf("failed to auto-detect GitHub user: %v\n"+
+					"Please specify --user=<username> to check a specific user.", err)
+			}
+			cfg.username = user
+			logger.Printf("auto-detected user: %s", cfg.username)
+		}
+	}
+
+	logger.Printf("creating client for backend: %s", cfg.backend)
+	client, err := turn.NewClient(cfg.backend)
+	if err != nil {
+		logger.Printf("failed to create client: %v", err)
+		return fmt.Errorf("creating client: %w", err)
+	}
+	if cfg.verbose {
 		client.SetLogger(logger)
 	}
 	if token != "" {
@@ -85,57 +98,49 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
 	defer cancel()
 
-	logger.Printf("sending check request")
-	result, err := client.Check(ctx, prURL, time.Now())
+	logger.Println("sending check request")
+	result, err := client.Check(ctx, cfg.prURL, cfg.username, time.Now())
 	if err != nil {
 		logger.Printf("check failed: %v", err)
-		fmt.Fprintf(os.Stderr, "error checking PR: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("checking PR: %w", err)
 	}
 
-	totalActions := len(result.NextAction)
-	criticalActions := 0
-	for _, action := range result.NextAction {
-		if action.CriticalPath {
-			criticalActions++
+	n := len(result.PRState.UnblockAction)
+	var critical int
+	for _, action := range result.PRState.UnblockAction {
+		if action.Critical {
+			critical++
 		}
 	}
-	logger.Printf("check successful: %d total actions (%d critical)", totalActions, criticalActions)
+	logger.Printf("check successful: %d total actions (%d critical)", n, critical)
 
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(result); err != nil {
 		logger.Printf("failed to format response: %v", err)
-		fmt.Fprintf(os.Stderr, "error formatting response: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("formatting response: %w", err)
 	}
 
-	if totalActions > 0 {
+	if n > 0 {
 		os.Exit(1)
 	}
+	return nil
 }
 
 func printUsage() {
-	progName := os.Args[0]
-	fmt.Fprintf(os.Stderr, "Usage: %s [options] <github-pr-url>\n\n", progName)
-	fmt.Fprintf(os.Stderr, "Options:\n")
-	fmt.Fprintf(os.Stderr, "  --backend=<url>    Backend server URL (default: %s)\n", defaultBackend)
-	fmt.Fprintf(os.Stderr, "  --user=<username>  GitHub username to check (default: current authenticated user)\n")
-	fmt.Fprintf(os.Stderr, "  --verbose          Enable verbose logging\n")
-	fmt.Fprintf(os.Stderr, "\nExamples:\n")
-	fmt.Fprintf(os.Stderr, "  %s https://github.com/owner/repo/pull/123\n", progName)
-	fmt.Fprintf(os.Stderr, "  %s --backend=https://api.example.com https://github.com/owner/repo/pull/123\n", progName)
-	fmt.Fprintf(os.Stderr, "  %s --user=octocat https://github.com/owner/repo/pull/123\n", progName)
-	fmt.Fprintf(os.Stderr, "  %s --verbose https://github.com/owner/repo/pull/123\n", progName)
+	flag.Usage()
 }
 
-func getGitHubToken() string {
-	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
-		return strings.TrimSpace(token)
+// gitHubToken attempts to get a GitHub token from environment or gh CLI.
+func gitHubToken() string {
+	if token := strings.TrimSpace(os.Getenv("GITHUB_TOKEN")); token != "" {
+		return token
 	}
-	if token := os.Getenv("GH_TOKEN"); token != "" {
-		return strings.TrimSpace(token)
+	if token := strings.TrimSpace(os.Getenv("GH_TOKEN")); token != "" {
+		return token
 	}
+	
+	// Try gh CLI
 	cmd := exec.Command("gh", "auth", "token")
 	cmd.Stderr = io.Discard
 	output, err := cmd.Output()
@@ -143,36 +148,4 @@ func getGitHubToken() string {
 		return ""
 	}
 	return strings.TrimSpace(string(output))
-}
-
-func getCurrentUser(token string) (string, error) {
-	if token == "" {
-		return "", fmt.Errorf("no github token available")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), userAuthTimeout)
-	defer cancel()
-	
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://api.github.com/user", nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Authorization", "token "+token)
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("github API returned status %d", resp.StatusCode)
-	}
-	var user struct {
-		Login string `json:"login"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
-		return "", err
-	}
-	return user.Login, nil
 }

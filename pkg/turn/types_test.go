@@ -33,27 +33,26 @@ func TestCheckRequestJSON(t *testing.T) {
 func TestCheckResponseJSON(t *testing.T) {
 	now := time.Now()
 	resp := CheckResponse{
-		NextAction: map[string]Action{
-			"user1": {Kind: "REVIEW", CriticalPath: true},
-			"user2": {Kind: "APPROVE", CriticalPath: false},
+		PRState: PRState{
+			UnblockAction: map[string]Action{
+				"user1": {Kind: "REVIEW", Critical: true, Reason: "needs to review"},
+				"user2": {Kind: "APPROVE", Critical: false, Reason: "needs to approve"},
+			},
+			UpdatedAt: now,
+			LastActivity: LastActivity{
+				Kind:      "comment",
+				Author:    "testuser",
+				Message:   "Please review",
+				Timestamp: now,
+			},
+			FailingTests:       2,
+			UnresolvedComments: 1,
+			Draft:              false,
+			ReadyToMerge:       false,
+			Tags:               []string{"has_approval"},
 		},
-		UpdatedAt: now,
-		RecentActivity: struct {
-			Type      string    `json:"type"`
-			Author    string    `json:"author"`
-			Message   string    `json:"message"`
-			Timestamp time.Time `json:"timestamp"`
-		}{
-			Type:      "comment",
-			Author:    "testuser",
-			Message:   "Please review",
-			Timestamp: now,
-		},
-		FailingTests:       2,
-		UnresolvedComments: 1,
-		IsDraft:            false,
-		ReadyToMerge:       false,
-		Tags:               []string{"has_approval"},
+		Timestamp: now,
+		Commit:    "test-commit",
 	}
 
 	data, err := json.Marshal(resp)
@@ -67,37 +66,45 @@ func TestCheckResponseJSON(t *testing.T) {
 	}
 
 	// Verify core fields
-	if len(decoded.NextAction) != len(resp.NextAction) {
-		t.Errorf("NextAction length = %d, want %d", len(decoded.NextAction), len(resp.NextAction))
+	if len(decoded.PRState.UnblockAction) != len(resp.PRState.UnblockAction) {
+		t.Errorf("UnblockAction length = %d, want %d", len(decoded.PRState.UnblockAction), len(resp.PRState.UnblockAction))
 	}
-	for user, action := range resp.NextAction {
-		decodedAction := decoded.NextAction[user]
+	for user, action := range resp.PRState.UnblockAction {
+		decodedAction := decoded.PRState.UnblockAction[user]
 		if decodedAction.Kind != action.Kind {
-			t.Errorf("NextAction[%s].Kind = %s, want %s", user, decodedAction.Kind, action.Kind)
+			t.Errorf("UnblockAction[%s].Kind = %s, want %s", user, decodedAction.Kind, action.Kind)
 		}
-		if decodedAction.CriticalPath != action.CriticalPath {
-			t.Errorf("NextAction[%s].CriticalPath = %v, want %v", user, decodedAction.CriticalPath, action.CriticalPath)
+		if decodedAction.Critical != action.Critical {
+			t.Errorf("UnblockAction[%s].Critical = %v, want %v", user, decodedAction.Critical, action.Critical)
 		}
 	}
 
 	// Verify recent activity
-	if decoded.RecentActivity.Type != resp.RecentActivity.Type {
-		t.Errorf("RecentActivity.Type = %s, want %s", decoded.RecentActivity.Type, resp.RecentActivity.Type)
+	if decoded.PRState.LastActivity.Kind != resp.PRState.LastActivity.Kind {
+		t.Errorf("LastActivity.Kind = %s, want %s", decoded.PRState.LastActivity.Kind, resp.PRState.LastActivity.Kind)
 	}
 
 	// Verify debugging info
-	if decoded.FailingTests != resp.FailingTests {
-		t.Errorf("FailingTests = %d, want %d", decoded.FailingTests, resp.FailingTests)
+	if decoded.PRState.FailingTests != resp.PRState.FailingTests {
+		t.Errorf("FailingTests = %d, want %d", decoded.PRState.FailingTests, resp.PRState.FailingTests)
 	}
-	if decoded.UnresolvedComments != resp.UnresolvedComments {
-		t.Errorf("UnresolvedComments = %d, want %d", decoded.UnresolvedComments, resp.UnresolvedComments)
+	if decoded.PRState.UnresolvedComments != resp.PRState.UnresolvedComments {
+		t.Errorf("UnresolvedComments = %d, want %d", decoded.PRState.UnresolvedComments, resp.PRState.UnresolvedComments)
 	}
 	
 	// Verify flags
-	if decoded.ReadyToMerge != resp.ReadyToMerge {
-		t.Errorf("ReadyToMerge = %v, want %v", decoded.ReadyToMerge, resp.ReadyToMerge)
+	if decoded.PRState.ReadyToMerge != resp.PRState.ReadyToMerge {
+		t.Errorf("ReadyToMerge = %v, want %v", decoded.PRState.ReadyToMerge, resp.PRState.ReadyToMerge)
 	}
-	if decoded.IsDraft != resp.IsDraft {
-		t.Errorf("IsDraft = %v, want %v", decoded.IsDraft, resp.IsDraft)
+	if decoded.PRState.Draft != resp.PRState.Draft {
+		t.Errorf("Draft = %v, want %v", decoded.PRState.Draft, resp.PRState.Draft)
+	}
+	
+	// Verify server info
+	if decoded.Timestamp.Unix() != resp.Timestamp.Unix() {
+		t.Errorf("Timestamp = %v, want %v", decoded.Timestamp, resp.Timestamp)
+	}
+	if decoded.Commit != resp.Commit {
+		t.Errorf("Commit = %s, want %s", decoded.Commit, resp.Commit)
 	}
 }

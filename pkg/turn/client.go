@@ -39,33 +39,26 @@ func NewClient(baseURL string) (*Client, error) {
 		return nil, fmt.Errorf("base URL too long (max %d characters)", maxURLLength)
 	}
 	
-	// Validate and normalize the base URL
-	parsedURL, err := url.Parse(baseURL)
+	u, err := url.Parse(baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid base URL: %w", err)
 	}
 	
-	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+	if u.Scheme != "http" && u.Scheme != "https" {
 		return nil, fmt.Errorf("base URL must use http or https scheme")
 	}
 	
-	if parsedURL.Host == "" {
+	if u.Host == "" {
 		return nil, fmt.Errorf("base URL must include host")
 	}
 	
-	// Remove trailing slash for consistency
+	// Normalize URL by removing trailing slash
 	baseURL = strings.TrimRight(baseURL, "/")
 	
 	return &Client{
 		baseURL: baseURL,
 		httpClient: &http.Client{
 			Timeout: defaultTimeout,
-			Transport: &http.Transport{
-				MaxIdleConns:        10,
-				IdleConnTimeout:     30 * time.Second,
-				DisableCompression:  true,
-				TLSHandshakeTimeout: 10 * time.Second,
-			},
 		},
 		logger: log.New(io.Discard, "[turn-client] ", log.LstdFlags|log.Lshortfile),
 	}, nil
@@ -73,11 +66,12 @@ func NewClient(baseURL string) (*Client, error) {
 
 // SetAuthToken sets the GitHub authentication token.
 func (c *Client) SetAuthToken(token string) {
+	c.authToken = token
 	if token == "" {
 		c.logger.Println("warning: setting empty auth token")
+	} else {
+		c.logger.Println("auth token updated")
 	}
-	c.authToken = token
-	c.logger.Println("auth token updated")
 }
 
 // SetLogger sets a custom logger for the client.
@@ -87,9 +81,9 @@ func (c *Client) SetLogger(logger *log.Logger) {
 	}
 }
 
-// Check performs a PR check with a known PR update timestamp for caching.
-func (c *Client) Check(ctx context.Context, prURL string, updatedAt time.Time) (*CheckResponse, error) {
-	// Validate inputs
+// Check validates a PR state at the given URL for the specified user.
+// The updatedAt timestamp is used for caching.
+func (c *Client) Check(ctx context.Context, prURL, user string, updatedAt time.Time) (*CheckResponse, error) {
 	if prURL == "" {
 		return nil, fmt.Errorf("PR URL cannot be empty")
 	}
@@ -97,22 +91,21 @@ func (c *Client) Check(ctx context.Context, prURL string, updatedAt time.Time) (
 		return nil, fmt.Errorf("updated_at timestamp cannot be zero")
 	}
 	
-	// Log sanitized values to prevent log injection
-	safePR := sanitizeForLog(prURL)
-	c.logger.Printf("checking PR %s (updated: %s)", safePR, updatedAt.Format(time.RFC3339))
+	c.logger.Printf("checking PR %s for user %s (updated: %s)", sanitizeForLog(prURL), sanitizeForLog(user), updatedAt.Format(time.RFC3339))
 	
 	req := CheckRequest{
 		URL:       prURL,
 		UpdatedAt: updatedAt,
+		User:      user,
 	}
 
-	jsonData, err := json.Marshal(req)
-	if err != nil {
-		return nil, fmt.Errorf("marshal request: %w", err)
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(req); err != nil {
+		return nil, fmt.Errorf("encode request: %w", err)
 	}
 
 	endpoint := c.baseURL + "/v1/validate"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(jsonData))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, &buf)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
@@ -131,9 +124,8 @@ func (c *Client) Check(ctx context.Context, prURL string, updatedAt time.Time) (
 	}
 	defer resp.Body.Close()
 
-	// Limit response body to prevent memory exhaustion
-	limitedReader := io.LimitReader(resp.Body, 1024*1024) // 1MB limit
-	body, err := io.ReadAll(limitedReader)
+	// Read response body with size limit
+	body, err := readResponseBody(resp, 1024*1024) // 1MB limit
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
@@ -149,12 +141,11 @@ func (c *Client) Check(ctx context.Context, prURL string, updatedAt time.Time) (
 		return nil, fmt.Errorf("unmarshal response: %w", err)
 	}
 
-	c.logger.Printf("check complete: %d actions assigned", len(result.NextAction))
+	c.logger.Printf("check complete: %d actions assigned", len(result.PRState.UnblockAction))
 	return &result, nil
 }
 
-// CurrentUser gets the current authenticated GitHub user.
-// This is a package-level function as it doesn't require a Turn API client.
+// CurrentUser retrieves the current authenticated GitHub user's login.
 func CurrentUser(ctx context.Context, token string) (string, error) {
 	if token == "" {
 		return "", fmt.Errorf("token cannot be empty")
@@ -177,8 +168,7 @@ func CurrentUser(ctx context.Context, token string) (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		limitedReader := io.LimitReader(resp.Body, 1024*1024) // 1MB limit
-		body, _ := io.ReadAll(limitedReader)
+		body, _ := readResponseBody(resp, 1024*1024) // 1MB limit
 		return "", fmt.Errorf("GitHub API returned %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -196,27 +186,41 @@ func CurrentUser(ctx context.Context, token string) (string, error) {
 	return user.Login, nil
 }
 
+// readResponseBody reads response body with a size limit.
+func readResponseBody(resp *http.Response, maxSize int64) ([]byte, error) {
+	return io.ReadAll(io.LimitReader(resp.Body, maxSize))
+}
+
 // sanitizeForLog removes newlines and control characters to prevent log injection.
 func sanitizeForLog(input string) string {
-	// Replace newlines and carriage returns
-	sanitized := strings.ReplaceAll(input, "\n", "\\n")
-	sanitized = strings.ReplaceAll(sanitized, "\r", "\\r")
+	const maxLen = 100
 	
-	// Remove other control characters
+	// Truncate early if too long
+	n := len(input)
+	if n > maxLen {
+		n = maxLen
+		input = input[:n]
+	}
+	
 	var result strings.Builder
-	for _, r := range sanitized {
-		if r >= 32 && r != 127 {
-			result.WriteRune(r)
+	result.Grow(n)
+	
+	for _, r := range input {
+		switch r {
+		case '\n':
+			result.WriteString("\\n")
+		case '\r':
+			result.WriteString("\\r")
+		default:
+			if r >= 32 && r != 127 {
+				result.WriteRune(r)
+			}
 		}
 	}
 	
-	// Limit length to prevent log flooding
-	output := result.String()
-	const maxLen = 100
-	if len(output) > maxLen {
-		output = output[:maxLen-3] + "..."
+	if n == maxLen && result.Len() >= maxLen-3 {
+		s := result.String()
+		return s[:maxLen-3] + "..."
 	}
-	
-	return output
+	return result.String()
 }
-
