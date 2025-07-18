@@ -45,7 +45,7 @@ func TestCheckResponseJSON(t *testing.T) {
 				Message:   "Please review",
 				Timestamp: now,
 			},
-			FailingTests:       2,
+			Checks:             Checks{Failing: 2},
 			UnresolvedComments: 1,
 			Draft:              false,
 			ReadyToMerge:       false,
@@ -85,8 +85,8 @@ func TestCheckResponseJSON(t *testing.T) {
 	}
 
 	// Verify debugging info
-	if decoded.PRState.FailingTests != resp.PRState.FailingTests {
-		t.Errorf("FailingTests = %d, want %d", decoded.PRState.FailingTests, resp.PRState.FailingTests)
+	if decoded.PRState.Checks.Failing != resp.PRState.Checks.Failing {
+		t.Errorf("Checks.Failing = %d, want %d", decoded.PRState.Checks.Failing, resp.PRState.Checks.Failing)
 	}
 	if decoded.PRState.UnresolvedComments != resp.PRState.UnresolvedComments {
 		t.Errorf("UnresolvedComments = %d, want %d", decoded.PRState.UnresolvedComments, resp.PRState.UnresolvedComments)

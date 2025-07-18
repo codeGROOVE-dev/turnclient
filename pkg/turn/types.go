@@ -26,7 +26,7 @@ type LastActivity struct {
 }
 
 type Checks struct {
-	Total   int `json:'total"`   // number of checks associated to this PR
+	Total   int `json:"total"`   // number of checks associated to this PR
 	Failing int `json:"failing"` // number of checks that failed
 	Waiting int `json:"waiting"` // waiting for a deployment protection rule to be satisfied.
 	Pending int `json:"pending"` // Pending execution (effectively: total - failing - waiting - passing)

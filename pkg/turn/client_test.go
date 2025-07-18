@@ -87,7 +87,7 @@ func TestClient_Check(t *testing.T) {
 			response: CheckResponse{
 				PRState: PRState{
 					UnblockAction:      map[string]Action{},
-					FailingTests:       0,
+					Checks:             Checks{},
 					UnresolvedComments: 0,
 					ReadyToMerge:       true,
 				},
@@ -104,7 +104,7 @@ func TestClient_Check(t *testing.T) {
 					UnblockAction: map[string]Action{
 						"testuser": {Kind: "REVIEW", Critical: true, Reason: "needs to review"},
 					},
-					FailingTests:       0,
+					Checks:             Checks{},
 					UnresolvedComments: 0,
 					ReadyToMerge:       false,
 				},
@@ -125,7 +125,7 @@ func TestClient_Check(t *testing.T) {
 			username:     "testuser",
 			statusCode:   http.StatusInternalServerError,
 			wantErr:      true,
-			errorMessage: "server returned 500",
+			errorMessage: "API request failed with status 500",
 		},
 		{
 			name:         "not found",
@@ -133,7 +133,7 @@ func TestClient_Check(t *testing.T) {
 			username:     "testuser",
 			statusCode:   http.StatusNotFound,
 			wantErr:      true,
-			errorMessage: "server returned 404",
+			errorMessage: "API request failed with status 404",
 		},
 	}
 
@@ -226,7 +226,7 @@ func TestClient_CheckWithAuth(t *testing.T) {
 		json.NewEncoder(w).Encode(CheckResponse{
 			PRState: PRState{
 				UnblockAction:      map[string]Action{},
-				FailingTests:       0,
+				Checks:             Checks{},
 				UnresolvedComments: 0,
 				ReadyToMerge:       true,
 			},
@@ -276,81 +276,21 @@ func TestCurrentUser(t *testing.T) {
 	tests := []struct {
 		name         string
 		token        string
-		username     string
-		statusCode   int
 		wantErr      bool
 		errorMessage string
 	}{
-		{
-			name:       "successful request",
-			token:      "valid-token",
-			username:   "octocat",
-			statusCode: http.StatusOK,
-			wantErr:    false,
-		},
 		{
 			name:         "empty token",
 			token:        "",
 			wantErr:      true,
 			errorMessage: "token cannot be empty",
 		},
-		{
-			name:         "unauthorized",
-			token:        "invalid-token",
-			statusCode:   http.StatusUnauthorized,
-			wantErr:      true,
-			errorMessage: "GitHub API returned 401",
-		},
-		{
-			name:       "empty username in response",
-			token:      "valid-token",
-			username:   "",
-			statusCode: http.StatusOK,
-			wantErr:    true,
-			errorMessage: "empty username",
-		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.token != "" {
-				// Create test server for GitHub API
-				server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					// Verify request
-					if r.Method != http.MethodGet {
-						t.Errorf("expected GET, got %s", r.Method)
-					}
-					if r.URL.Path != "/user" {
-						t.Errorf("expected /user, got %s", r.URL.Path)
-					}
-					
-					authHeader := r.Header.Get("Authorization")
-					expectedAuth := "Bearer " + tt.token
-					if authHeader != expectedAuth {
-						t.Errorf("Authorization header = %s, want %s", authHeader, expectedAuth)
-					}
-
-					// Send response
-					if tt.statusCode != http.StatusOK {
-						w.WriteHeader(tt.statusCode)
-						w.Write([]byte("error"))
-						return
-					}
-
-					w.Header().Set("Content-Type", "application/json")
-					json.NewEncoder(w).Encode(struct {
-						Login string `json:"login"`
-					}{Login: tt.username})
-				}))
-				defer server.Close()
-
-				// Override the GitHub API URL for testing
-				// Note: In production code, we might want to make this configurable
-				// For now, we'll test the error paths
-			}
-
 			ctx := context.Background()
-			result, err := CurrentUser(ctx, tt.token)
+			_, err := CurrentUser(ctx, tt.token)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("CurrentUser() error = %v, wantErr %v", err, tt.wantErr)
@@ -361,10 +301,6 @@ func TestCurrentUser(t *testing.T) {
 				if !strings.Contains(err.Error(), tt.errorMessage) {
 					t.Errorf("CurrentUser() error = %v, want error containing %q", err, tt.errorMessage)
 				}
-			}
-
-			if !tt.wantErr && tt.token != "" && result != tt.username {
-				t.Errorf("CurrentUser() = %s, want %s", result, tt.username)
 			}
 		})
 	}

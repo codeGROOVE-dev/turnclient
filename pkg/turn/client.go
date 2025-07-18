@@ -15,12 +15,12 @@ import (
 )
 
 const (
-	defaultTimeout = 30 * time.Second
-	maxURLLength   = 2048
-	userAgent      = "turnclient/1.0"
+	userAgent       = "turnclient/1.0"
+	maxResponseSize = 1024 * 1024 // 1MB
 )
 
 // Client communicates with the Turn API.
+// All methods are safe for concurrent use.
 type Client struct {
 	baseURL    string
 	httpClient *http.Client
@@ -35,21 +35,13 @@ func NewClient(baseURL string) (*Client, error) {
 		return nil, fmt.Errorf("base URL cannot be empty")
 	}
 	
-	if len(baseURL) > maxURLLength {
-		return nil, fmt.Errorf("base URL too long (max %d characters)", maxURLLength)
-	}
-	
 	u, err := url.Parse(baseURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid base URL: %w", err)
 	}
 	
 	if u.Scheme != "http" && u.Scheme != "https" {
-		return nil, fmt.Errorf("base URL must use http or https scheme")
-	}
-	
-	if u.Host == "" {
-		return nil, fmt.Errorf("base URL must include host")
+		return nil, fmt.Errorf("base URL must use http or https")
 	}
 	
 	// Normalize URL by removing trailing slash
@@ -58,20 +50,15 @@ func NewClient(baseURL string) (*Client, error) {
 	return &Client{
 		baseURL: baseURL,
 		httpClient: &http.Client{
-			Timeout: defaultTimeout,
+			Timeout: 30 * time.Second,
 		},
-		logger: log.New(io.Discard, "[turn-client] ", log.LstdFlags|log.Lshortfile),
+		logger: log.New(io.Discard, "", 0),
 	}, nil
 }
 
 // SetAuthToken sets the GitHub authentication token.
 func (c *Client) SetAuthToken(token string) {
 	c.authToken = token
-	if token == "" {
-		c.logger.Println("warning: setting empty auth token")
-	} else {
-		c.logger.Println("auth token updated")
-	}
 }
 
 // SetLogger sets a custom logger for the client.
@@ -87,11 +74,14 @@ func (c *Client) Check(ctx context.Context, prURL, user string, updatedAt time.T
 	if prURL == "" {
 		return nil, fmt.Errorf("PR URL cannot be empty")
 	}
+	if user == "" {
+		return nil, fmt.Errorf("user cannot be empty")
+	}
 	if updatedAt.IsZero() {
 		return nil, fmt.Errorf("updated_at timestamp cannot be zero")
 	}
 	
-	c.logger.Printf("checking PR %s for user %s (updated: %s)", sanitizeForLog(prURL), sanitizeForLog(user), updatedAt.Format(time.RFC3339))
+	c.logger.Printf("checking PR %s for user %s", sanitizeForLog(prURL), sanitizeForLog(user))
 	
 	req := CheckRequest{
 		URL:       prURL,
@@ -124,16 +114,15 @@ func (c *Client) Check(ctx context.Context, prURL, user string, updatedAt time.T
 	}
 	defer resp.Body.Close()
 
-	// Read response body with size limit
-	body, err := readResponseBody(resp, 1024*1024) // 1MB limit
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 
-	c.logger.Printf("received response: status=%d, size=%d bytes", resp.StatusCode, len(body))
+	c.logger.Printf("received response: status=%d", resp.StatusCode)
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("server returned %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var result CheckResponse
@@ -168,8 +157,8 @@ func CurrentUser(ctx context.Context, token string) (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := readResponseBody(resp, 1024*1024) // 1MB limit
-		return "", fmt.Errorf("GitHub API returned %d: %s", resp.StatusCode, string(body))
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
+		return "", fmt.Errorf("GitHub API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var user struct {
@@ -186,41 +175,16 @@ func CurrentUser(ctx context.Context, token string) (string, error) {
 	return user.Login, nil
 }
 
-// readResponseBody reads response body with a size limit.
-func readResponseBody(resp *http.Response, maxSize int64) ([]byte, error) {
-	return io.ReadAll(io.LimitReader(resp.Body, maxSize))
-}
-
-// sanitizeForLog removes newlines and control characters to prevent log injection.
-func sanitizeForLog(input string) string {
-	const maxLen = 100
-	
-	// Truncate early if too long
-	n := len(input)
-	if n > maxLen {
-		n = maxLen
-		input = input[:n]
+// sanitizeForLog removes control characters to prevent log injection.
+func sanitizeForLog(s string) string {
+	if len(s) > 100 {
+		s = s[:100] + "..."
 	}
 	
-	var result strings.Builder
-	result.Grow(n)
+	// Simple replacement of problematic characters
+	s = strings.ReplaceAll(s, "\n", "\\n")
+	s = strings.ReplaceAll(s, "\r", "\\r")
+	s = strings.ReplaceAll(s, "\t", "\\t")
 	
-	for _, r := range input {
-		switch r {
-		case '\n':
-			result.WriteString("\\n")
-		case '\r':
-			result.WriteString("\\r")
-		default:
-			if r >= 32 && r != 127 {
-				result.WriteRune(r)
-			}
-		}
-	}
-	
-	if n == maxLen && result.Len() >= maxLen-3 {
-		s := result.String()
-		return s[:maxLen-3] + "..."
-	}
-	return result.String()
+	return s
 }

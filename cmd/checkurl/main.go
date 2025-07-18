@@ -29,7 +29,7 @@ func main() {
 	flag.Parse()
 
 	if flag.NArg() != 1 {
-		printUsage()
+		flag.Usage()
 		os.Exit(1)
 	}
 	cfg.prURL = flag.Arg(0)
@@ -50,7 +50,7 @@ type config struct {
 func run(cfg config) error {
 	var logger *log.Logger
 	if cfg.verbose {
-		logger = log.New(os.Stderr, "[checkurl] ", log.LstdFlags|log.Lshortfile)
+		logger = log.New(os.Stderr, "", log.LstdFlags)
 	} else {
 		logger = log.New(io.Discard, "", 0)
 	}
@@ -65,7 +65,7 @@ func run(cfg config) error {
 				"To authenticate, run 'gh auth login' or set GITHUB_TOKEN environment variable.\n" +
 				"Alternatively, specify --user=<username> to check a specific user.")
 		}
-		fmt.Fprintln(os.Stderr, "warning: no GitHub token found, API requests may be rate limited\n")
+		fmt.Fprint(os.Stderr, "warning: no GitHub token found, API requests may be rate limited\n")
 	} else {
 		logger.Println("GitHub token found")
 		if cfg.username == "" {
@@ -82,10 +82,8 @@ func run(cfg config) error {
 		}
 	}
 
-	logger.Printf("creating client for backend: %s", cfg.backend)
 	client, err := turn.NewClient(cfg.backend)
 	if err != nil {
-		logger.Printf("failed to create client: %v", err)
 		return fmt.Errorf("creating client: %w", err)
 	}
 	if cfg.verbose {
@@ -98,45 +96,32 @@ func run(cfg config) error {
 	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
 	defer cancel()
 
-	logger.Println("sending check request")
 	result, err := client.Check(ctx, cfg.prURL, cfg.username, time.Now())
 	if err != nil {
-		logger.Printf("check failed: %v", err)
 		return fmt.Errorf("checking PR: %w", err)
 	}
 
-	n := len(result.PRState.UnblockAction)
-	var critical int
-	for _, action := range result.PRState.UnblockAction {
-		if action.Critical {
-			critical++
-		}
-	}
-	logger.Printf("check successful: %d total actions (%d critical)", n, critical)
+	blockingActions := len(result.PRState.UnblockAction)
+	logger.Printf("found %d blocking actions", blockingActions)
 
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(result); err != nil {
-		logger.Printf("failed to format response: %v", err)
-		return fmt.Errorf("formatting response: %w", err)
+		return fmt.Errorf("encoding response: %w", err)
 	}
 
-	if n > 0 {
+	if blockingActions > 0 {
 		os.Exit(1)
 	}
 	return nil
 }
 
-func printUsage() {
-	flag.Usage()
-}
-
-// gitHubToken attempts to get a GitHub token from environment or gh CLI.
+// gitHubToken gets a GitHub token from environment or gh CLI.
 func gitHubToken() string {
-	if token := strings.TrimSpace(os.Getenv("GITHUB_TOKEN")); token != "" {
+	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
 		return token
 	}
-	if token := strings.TrimSpace(os.Getenv("GH_TOKEN")); token != "" {
+	if token := os.Getenv("GH_TOKEN"); token != "" {
 		return token
 	}
 	
