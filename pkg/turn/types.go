@@ -52,6 +52,10 @@ type PRState struct {
 	Approved      bool `json:"approved"`
 
 	Tags []string `json:"tags"` // e.g., ["draft", "merge_conflict", "approved"]
+
+	// State duration tracking
+	StateDurations map[string]int `json:"state_durations,omitempty"` // Cumulative seconds spent in each state
+	CurrentState   string         `json:"current_state,omitempty"`   // Current state the PR is in
 }
 
 // CheckResponse represents the response from a PR check.
