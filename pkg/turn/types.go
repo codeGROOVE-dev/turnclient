@@ -1,6 +1,8 @@
 package turn
 
-import "time"
+import (
+	"time"
+)
 
 // CheckRequest represents a request to check if a PR is blocked by a user.
 type CheckRequest struct {
@@ -11,10 +13,10 @@ type CheckRequest struct {
 
 // Action represents an expected action from a specific user.
 type Action struct {
-	Kind          string `json:"kind"`
-	Critical      bool   `json:"critical"`
-	Reason        string `json:"reason"`
-	ReadyToNotify bool   `json:"ready_to_notify"`
+	Kind        string     `json:"kind"`
+	Critical    bool       `json:"critical"`
+	Reason      string     `json:"reason"`
+	NotifyAfter *time.Time `json:"notify_after,omitempty"`
 }
 
 // LastActivity represents the most recent activity on a PR.
@@ -32,6 +34,15 @@ type Checks struct {
 	Pending int `json:"pending"` // Pending execution (effectively: total - failing - waiting - passing)
 	Passing int `json:"passing"` // Number of checks that passed
 	Ignored int `json:"ignored"` // Number of failing tests we ignored
+}
+
+// StateTransition represents a state change based on an event
+type StateTransition struct {
+	FromState     string    `json:"from_state"`
+	ToState       string    `json:"to_state"`
+	Timestamp     time.Time `json:"timestamp"`
+	TriggerEvent  string    `json:"trigger_event"`
+	LastEventKind string    `json:"last_event_kind"` // The last event kind seen before this transition
 }
 
 // PRState represents the current state of a PR.
@@ -54,8 +65,9 @@ type PRState struct {
 	Tags []string `json:"tags"` // e.g., ["draft", "merge_conflict", "approved"]
 
 	// State duration tracking
-	StateDurations map[string]int `json:"state_durations,omitempty"` // Cumulative seconds spent in each state
-	CurrentState   string         `json:"current_state,omitempty"`   // Current state the PR is in
+	StateDurations   map[string]int     `json:"state_durations,omitempty"`   // Cumulative seconds spent in each state
+	CurrentState     string             `json:"current_state,omitempty"`     // Current state the PR is in
+	StateTransitions []StateTransition  `json:"state_transitions,omitempty"` // List of state transitions
 }
 
 // CheckResponse represents the response from a PR check.

@@ -21,9 +21,10 @@ import (
 )
 
 const (
-	defaultBackend  = "https://turn.ready-to-review.dev"
-	requestTimeout  = 30 * time.Second
-	userAuthTimeout = 10 * time.Second
+	defaultBackend     = "https://turn.ready-to-review.dev"
+	requestTimeout     = 30 * time.Second
+	localRequestTimeout = 10 * time.Second  // Shorter timeout for local server
+	userAuthTimeout    = 10 * time.Second
 	serverStartTimeout = 5 * time.Second
 )
 
@@ -32,6 +33,7 @@ func main() {
 	flag.StringVar(&cfg.backend, "backend", defaultBackend, "Backend server URL (use 'local' to launch local server)")
 	flag.StringVar(&cfg.username, "user", "", "GitHub username to check (defaults to current authenticated user)")
 	flag.BoolVar(&cfg.verbose, "verbose", false, "Enable verbose logging")
+	flag.BoolVar(&cfg.noCache, "no-cache", false, "Disable caching and fetch fresh data")
 	flag.Parse()
 
 	if flag.NArg() != 1 {
@@ -50,6 +52,7 @@ type config struct {
 	backend  string
 	username string
 	verbose  bool
+	noCache  bool
 	prURL    string
 }
 
@@ -63,7 +66,9 @@ func run(cfg config) error {
 
 	// Handle local backend mode
 	var serverCmd *exec.Cmd
-	if cfg.backend == "local" {
+	var serverCrashed = make(chan error, 1)
+	isLocalBackend := cfg.backend == "local"
+	if isLocalBackend {
 		port, cmd, err := startLocalServer(logger)
 		if err != nil {
 			return fmt.Errorf("starting local server: %w", err)
@@ -77,12 +82,24 @@ func run(cfg config) error {
 			fmt.Fprintf(os.Stderr, "Started local server on port %d\n", port)
 		}
 		
+		// Monitor server health
+		go func() {
+			err := serverCmd.Wait()
+			if err != nil {
+				logger.Printf("server process exited with error: %v", err)
+				serverCrashed <- fmt.Errorf("local server crashed: %w", err)
+			} else {
+				logger.Printf("server process exited normally")
+				serverCrashed <- fmt.Errorf("local server exited unexpectedly")
+			}
+		}()
+		
 		// Ensure server is cleaned up on exit
 		defer func() {
 			if serverCmd != nil && serverCmd.Process != nil {
 				logger.Printf("stopping local server")
 				serverCmd.Process.Signal(syscall.SIGTERM)
-				serverCmd.Wait()
+				// Don't wait here as the monitor goroutine is already waiting
 			}
 		}()
 		
@@ -135,13 +152,57 @@ func run(cfg config) error {
 	if token != "" {
 		client.SetAuthToken(token)
 	}
+	if cfg.noCache {
+		client.SetNoCache(true)
+	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+	// Use shorter timeout for local backend
+	timeout := requestTimeout
+	if isLocalBackend {
+		timeout = localRequestTimeout
+	}
+	
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	result, err := client.Check(ctx, cfg.prURL, cfg.username, time.Now())
-	if err != nil {
-		return fmt.Errorf("checking PR: %w", err)
+	// Create a channel to receive the result
+	type checkResult struct {
+		resp *turn.CheckResponse
+		err  error
+	}
+	resultChan := make(chan checkResult, 1)
+
+	// Run the check in a goroutine
+	go func() {
+		resp, err := client.Check(ctx, cfg.prURL, cfg.username, time.Now())
+		resultChan <- checkResult{resp, err}
+	}()
+
+	// Wait for either the result or server crash
+	var result *turn.CheckResponse
+	if isLocalBackend {
+		select {
+		case res := <-resultChan:
+			if res.err != nil {
+				return fmt.Errorf("checking PR: %w", res.err)
+			}
+			result = res.resp
+		case err := <-serverCrashed:
+			cancel() // Cancel the pending request
+			return err
+		case <-ctx.Done():
+			return fmt.Errorf("request timed out after %v", timeout)
+		}
+	} else {
+		select {
+		case res := <-resultChan:
+			if res.err != nil {
+				return fmt.Errorf("checking PR: %w", res.err)
+			}
+			result = res.resp
+		case <-ctx.Done():
+			return fmt.Errorf("request timed out after %v", timeout)
+		}
 	}
 
 	blockingActions := len(result.PRState.UnblockAction)
@@ -180,54 +241,23 @@ func gitHubToken() string {
 
 // startLocalServer starts the turnserver as a subprocess on port 0 and returns the actual port
 func startLocalServer(logger *log.Logger) (int, *exec.Cmd, error) {
-	// Find the server binary - try several locations
-	serverPaths := []string{
-		"../server/bin/turnserver",
-		"../../server/bin/turnserver",
-		"./turnserver",
-		"turnserver",
+	// Find the server source directory
+	sourceDirs := []string{
+		"../server",
+		"../../server",
 	}
 	
-	// Also check if we can build it from source
-	var serverBinary string
-	for _, path := range serverPaths {
-		if _, err := os.Stat(path); err == nil {
-			serverBinary = path
+	var sourceDir string
+	for _, dir := range sourceDirs {
+		if _, err := os.Stat(filepath.Join(dir, "cmd/server/main.go")); err == nil {
+			sourceDir = dir
+			logger.Printf("found server source at %s", sourceDir)
 			break
 		}
 	}
 	
-	// If not found, try to build it
-	if serverBinary == "" {
-		logger.Println("server binary not found, attempting to build from source")
-		
-		// Find the server source directory
-		sourceDirs := []string{
-			"../server",
-			"../../server",
-		}
-		
-		var sourceDir string
-		for _, dir := range sourceDirs {
-			if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-				sourceDir = dir
-				break
-			}
-		}
-		
-		if sourceDir == "" {
-			return 0, nil, fmt.Errorf("could not find server source directory")
-		}
-		
-		// Build the server
-		serverBinary = filepath.Join(sourceDir, "bin", "turnserver")
-		buildCmd := exec.Command("go", "build", "-o", serverBinary, "./cmd/server")
-		buildCmd.Dir = sourceDir
-		buildCmd.Stderr = os.Stderr
-		if err := buildCmd.Run(); err != nil {
-			return 0, nil, fmt.Errorf("building server: %w", err)
-		}
-		logger.Printf("built server binary at %s", serverBinary)
+	if sourceDir == "" {
+		return 0, nil, fmt.Errorf("could not find server source directory")
 	}
 	
 	// Get a free port by binding to port 0
@@ -238,8 +268,10 @@ func startLocalServer(logger *log.Logger) (int, *exec.Cmd, error) {
 	port := listener.Addr().(*net.TCPAddr).Port
 	listener.Close() // Close so the server can bind to it
 	
-	// Start the server
-	cmd := exec.Command(serverBinary, "-port", fmt.Sprintf("%d", port))
+	// Start the server using go run to ensure latest code
+	logger.Printf("starting server on port %d", port)
+	cmd := exec.Command("go", "run", "./cmd/server", fmt.Sprintf("--port=%d", port))
+	cmd.Dir = sourceDir
 	
 	// Capture server output
 	stdout, err := cmd.StdoutPipe()

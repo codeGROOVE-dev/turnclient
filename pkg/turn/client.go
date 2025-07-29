@@ -26,6 +26,7 @@ type Client struct {
 	httpClient *http.Client
 	authToken  string
 	logger     *log.Logger
+	noCache    bool
 }
 
 // NewClient creates a new Turn API client.
@@ -47,10 +48,16 @@ func NewClient(baseURL string) (*Client, error) {
 	// Normalize URL by removing trailing slash
 	baseURL = strings.TrimRight(baseURL, "/")
 	
+	// Use shorter timeout for localhost
+	timeout := 30 * time.Second
+	if u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1" {
+		timeout = 10 * time.Second
+	}
+	
 	return &Client{
 		baseURL: baseURL,
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: timeout,
 		},
 		logger: log.New(io.Discard, "", 0),
 	}, nil
@@ -66,6 +73,11 @@ func (c *Client) SetLogger(logger *log.Logger) {
 	if logger != nil {
 		c.logger = logger
 	}
+}
+
+// SetNoCache enables or disables caching for this client.
+func (c *Client) SetNoCache(noCache bool) {
+	c.noCache = noCache
 }
 
 // Check validates a PR state at the given URL for the specified user.
@@ -105,6 +117,9 @@ func (c *Client) Check(ctx context.Context, prURL, user string, updatedAt time.T
 	httpReq.Header.Set("Accept", "application/json")
 	if c.authToken != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+c.authToken)
+	}
+	if c.noCache {
+		httpReq.Header.Set("Cache-Control", "no-cache")
 	}
 
 	c.logger.Printf("sending request to %s", endpoint)
