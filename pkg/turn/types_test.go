@@ -91,7 +91,7 @@ func TestCheckResponseJSON(t *testing.T) {
 	if decoded.PRState.UnresolvedComments != resp.PRState.UnresolvedComments {
 		t.Errorf("UnresolvedComments = %d, want %d", decoded.PRState.UnresolvedComments, resp.PRState.UnresolvedComments)
 	}
-	
+
 	// Verify flags
 	if decoded.PRState.ReadyToMerge != resp.PRState.ReadyToMerge {
 		t.Errorf("ReadyToMerge = %v, want %v", decoded.PRState.ReadyToMerge, resp.PRState.ReadyToMerge)
@@ -99,7 +99,7 @@ func TestCheckResponseJSON(t *testing.T) {
 	if decoded.PRState.Draft != resp.PRState.Draft {
 		t.Errorf("Draft = %v, want %v", decoded.PRState.Draft, resp.PRState.Draft)
 	}
-	
+
 	// Verify server info
 	if decoded.Timestamp.Unix() != resp.Timestamp.Unix() {
 		t.Errorf("Timestamp = %v, want %v", decoded.Timestamp, resp.Timestamp)

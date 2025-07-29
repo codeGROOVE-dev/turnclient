@@ -1,3 +1,4 @@
+// Package turn provides types and client functionality for the Turn API service.
 package turn
 
 import (
@@ -27,6 +28,7 @@ type LastActivity struct {
 	Timestamp time.Time `json:"timestamp"` // When it happened
 }
 
+// Checks represents the status of CI checks for a pull request.
 type Checks struct {
 	Total   int `json:"total"`   // number of checks associated to this PR
 	Failing int `json:"failing"` // number of checks that failed
@@ -65,9 +67,9 @@ type PRState struct {
 	Tags []string `json:"tags"` // e.g., ["draft", "merge_conflict", "approved"]
 
 	// State duration tracking
-	StateDurations   map[string]int     `json:"state_durations,omitempty"`   // Cumulative seconds spent in each state
-	CurrentState     string             `json:"current_state,omitempty"`     // Current state the PR is in
-	StateTransitions []StateTransition  `json:"state_transitions,omitempty"` // List of state transitions
+	StateDurations   map[string]int    `json:"state_durations,omitempty"`   // Cumulative seconds spent in each state
+	CurrentState     string            `json:"current_state,omitempty"`     // Current state the PR is in
+	StateTransitions []StateTransition `json:"state_transitions,omitempty"` // List of state transitions
 }
 
 // CheckResponse represents the response from a PR check.

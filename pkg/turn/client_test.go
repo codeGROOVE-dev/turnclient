@@ -125,7 +125,7 @@ func TestClient_Check(t *testing.T) {
 			username:     "testuser",
 			statusCode:   http.StatusInternalServerError,
 			wantErr:      true,
-			errorMessage: "API request failed with status 500",
+			errorMessage: "send request:", // Changed due to retry wrapper
 		},
 		{
 			name:         "not found",
@@ -133,7 +133,7 @@ func TestClient_Check(t *testing.T) {
 			username:     "testuser",
 			statusCode:   http.StatusNotFound,
 			wantErr:      true,
-			errorMessage: "API request failed with status 404",
+			errorMessage: "api request failed with status 404",
 		},
 	}
 
@@ -212,7 +212,7 @@ func TestClient_Check(t *testing.T) {
 
 func TestClient_CheckWithAuth(t *testing.T) {
 	token := "test-token-123"
-	
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Verify auth header
 		authHeader := r.Header.Get("Authorization")
@@ -220,7 +220,7 @@ func TestClient_CheckWithAuth(t *testing.T) {
 		if authHeader != expectedAuth {
 			t.Errorf("Authorization header = %s, want %s", authHeader, expectedAuth)
 		}
-		
+
 		// Send success response
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(CheckResponse{
@@ -275,22 +275,30 @@ func TestClient_CheckTimeout(t *testing.T) {
 func TestCurrentUser(t *testing.T) {
 	tests := []struct {
 		name         string
-		token        string
+		hasToken     bool
 		wantErr      bool
 		errorMessage string
 	}{
 		{
-			name:         "empty token",
-			token:        "",
+			name:         "no auth token",
+			hasToken:     false,
 			wantErr:      true,
-			errorMessage: "token cannot be empty",
+			errorMessage: "no auth token set",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			client, err := NewClient("https://api.example.com")
+			if err != nil {
+				t.Fatalf("failed to create client: %v", err)
+			}
+			if tt.hasToken {
+				client.SetAuthToken("test-token")
+			}
+
 			ctx := context.Background()
-			_, err := CurrentUser(ctx, tt.token)
+			_, err = client.CurrentUser(ctx)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("CurrentUser() error = %v, wantErr %v", err, tt.wantErr)
