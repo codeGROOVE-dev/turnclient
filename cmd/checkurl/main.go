@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -29,12 +30,11 @@ const (
 	requestTimeout     = 30 * time.Second
 	userAuthTimeout    = 10 * time.Second
 	serverStartTimeout = 5 * time.Second
+	serverPollInterval = 100 * time.Millisecond
 )
 
-var (
-	// Compile regex once for performance
-	prURLPattern = regexp.MustCompile(`^/([^/]+)/([^/]+)/pull/(\d+)(?:/.*)?$`)
-)
+// Compile regex once for performance.
+var prURLPattern = regexp.MustCompile(`^/([^/]+)/([^/]+)/pull/(\d+)(?:/.*)?$`)
 
 func main() {
 	var cfg config
@@ -65,11 +65,12 @@ func main() {
 type config struct {
 	backend  string
 	username string
+	prURL    string
 	verbose  bool
 	noCache  bool
-	prURL    string
 }
 
+//nolint:gocognit,gocyclo,revive // Main function handles multiple concerns
 func run(cfg config) error {
 	var logger *log.Logger
 	if cfg.verbose {
@@ -80,7 +81,7 @@ func run(cfg config) error {
 
 	// Handle local backend mode
 	var serverCmd *exec.Cmd
-	var interrupted = make(chan struct{}) // Signal handler notification
+	interrupted := make(chan struct{}) // Signal handler notification
 	isLocalBackend := cfg.backend == "local"
 	if isLocalBackend {
 		port, cmd, err := startLocalServer(logger)
@@ -102,15 +103,17 @@ func run(cfg config) error {
 			if err != nil {
 				logger.Printf("server process exited with error: %v", err)
 			} else {
-				logger.Printf("server process exited normally")
+				logger.Print("server process exited normally")
 			}
 		}()
 
 		// Ensure server is cleaned up on exit
 		defer func() {
 			if serverCmd != nil && serverCmd.Process != nil {
-				logger.Printf("stopping local server")
-				serverCmd.Process.Signal(syscall.SIGTERM)
+				logger.Print("stopping local server")
+				if err := serverCmd.Process.Signal(syscall.SIGTERM); err != nil {
+					logger.Printf("failed to send SIGTERM to server: %v", err)
+				}
 				// Don't wait here as the monitor goroutine is already waiting
 			}
 		}()
@@ -120,10 +123,12 @@ func run(cfg config) error {
 		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 		go func() {
 			<-sigChan
-			logger.Printf("received interrupt signal")
+			logger.Print("received interrupt signal")
 			close(interrupted) // Notify main goroutine
 			if isLocalBackend && serverCmd != nil && serverCmd.Process != nil {
-				serverCmd.Process.Signal(syscall.SIGTERM)
+				if err := serverCmd.Process.Signal(syscall.SIGTERM); err != nil {
+					logger.Printf("failed to send SIGTERM to server: %v", err)
+				}
 			}
 		}()
 	}
@@ -137,7 +142,9 @@ func run(cfg config) error {
 	}
 	if token == "" {
 		// Try gh CLI
-		cmd := exec.Command("gh", "auth", "token")
+		ctx, cancel := context.WithTimeout(context.Background(), userAuthTimeout)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "gh", "auth", "token")
 		cmd.Stderr = io.Discard
 		if output, err := cmd.Output(); err == nil {
 			token = strings.TrimSpace(string(output))
@@ -146,9 +153,9 @@ func run(cfg config) error {
 	if token == "" {
 		logger.Println("no GitHub token found")
 		if cfg.username == "" {
-			return fmt.Errorf("no GitHub token found and no username specified\n" +
-				"To authenticate, run 'gh auth login' or set GITHUB_TOKEN environment variable.\n" +
-				"Alternatively, specify --user=<username> to check a specific user.")
+			return errors.New("no GitHub token found and no username specified; " +
+				"to authenticate, run 'gh auth login' or set GITHUB_TOKEN environment variable; " +
+				"alternatively, specify --user=<username> to check a specific user")
 		}
 		fmt.Fprint(os.Stderr, "warning: no GitHub token found, API requests may be rate limited\n")
 	} else {
@@ -170,8 +177,8 @@ func run(cfg config) error {
 			user, err := client.CurrentUser(ctx)
 			if err != nil {
 				logger.Printf("failed to auto-detect user: %v", err)
-				return fmt.Errorf("failed to auto-detect GitHub user: %v\n"+
-					"Please specify --user=<username> to check a specific user.", err)
+				return fmt.Errorf("failed to auto-detect GitHub user: %v; "+
+					"please specify --user=<username> to check a specific user", err)
 			}
 			cfg.username = user
 			logger.Printf("auto-detected user: %s", cfg.username)
@@ -196,7 +203,7 @@ func run(cfg config) error {
 	}()
 
 	// Make the request
-	logger.Printf("sending check request to backend")
+	logger.Print("sending check request to backend")
 	start := time.Now()
 	result, err := client.Check(ctx, cfg.prURL, cfg.username, time.Now())
 	elapsed := time.Since(start)
@@ -206,7 +213,7 @@ func run(cfg config) error {
 			return fmt.Errorf("request timed out after %v", requestTimeout)
 		}
 		if ctx.Err() == context.Canceled {
-			return fmt.Errorf("interrupted")
+			return errors.New("interrupted")
 		}
 		return fmt.Errorf("checking PR: %w", err)
 	}
@@ -225,8 +232,9 @@ func run(cfg config) error {
 		return fmt.Errorf("encoding response: %w", err)
 	}
 
+	// Return non-nil error to indicate blocking actions found
 	if blockingActions > 0 {
-		os.Exit(1)
+		return fmt.Errorf("found %d blocking actions", blockingActions)
 	}
 	return nil
 }
@@ -234,7 +242,7 @@ func run(cfg config) error {
 // validatePRURL validates that the given URL is a valid GitHub PR URL.
 func validatePRURL(prURL string) error {
 	if prURL == "" {
-		return fmt.Errorf("pr URL cannot be empty")
+		return errors.New("pr URL cannot be empty")
 	}
 
 	u, err := url.Parse(prURL)
@@ -243,35 +251,40 @@ func validatePRURL(prURL string) error {
 	}
 
 	if u.Scheme != "http" && u.Scheme != "https" {
-		return fmt.Errorf("url must use http or https scheme")
+		return errors.New("url must use http or https scheme")
 	}
 
 	if u.Host != "github.com" && u.Host != "www.github.com" {
-		return fmt.Errorf("url must be a GitHub URL")
+		return errors.New("url must be a GitHub URL")
 	}
 
 	if !prURLPattern.MatchString(u.Path) {
-		return fmt.Errorf("url must be a GitHub pull request URL (e.g., https://github.com/owner/repo/pull/123)")
+		return errors.New("url must be a GitHub pull request URL (e.g., https://github.com/owner/repo/pull/123)")
 	}
 
 	return nil
 }
 
-
-// startLocalServer starts the turnserver as a subprocess on port 0 and returns the actual port
+// startLocalServer starts the turnserver as a subprocess on port 0 and returns the actual port.
 func startLocalServer(logger *log.Logger) (int, *exec.Cmd, error) {
 	// Server is expected to be at ../server relative to client
 	sourceDir := "../server"
-	if _, err := os.Stat(filepath.Join(sourceDir, "cmd/server/main.go")); err != nil {
+	if _, err := os.Stat(filepath.Join(sourceDir, "cmd", "server", "main.go")); err != nil {
 		return 0, nil, fmt.Errorf("server source not found at %s: %w", sourceDir, err)
 	}
 
 	// Get a free port by binding to port 0
-	listener, err := net.Listen("tcp", "localhost:0")
+	lc := &net.ListenConfig{}
+	ctx := context.Background()
+	listener, err := lc.Listen(ctx, "tcp", "localhost:0")
 	if err != nil {
 		return 0, nil, fmt.Errorf("finding free port: %w", err)
 	}
-	defer listener.Close() // Close so the server can bind to it
+	defer func() {
+		if err := listener.Close(); err != nil {
+			logger.Printf("failed to close listener: %v", err)
+		}
+	}() // Close so the server can bind to it
 
 	// Safe type assertion with error checking
 	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
@@ -282,7 +295,8 @@ func startLocalServer(logger *log.Logger) (int, *exec.Cmd, error) {
 
 	// Start the server using go run to ensure latest code
 	logger.Printf("starting server on port %d", port)
-	cmd := exec.Command("go", "run", "./cmd/server", fmt.Sprintf("--port=%d", port))
+	// #nosec G204 - port is internally controlled from net.Listen, not user input
+	cmd := exec.CommandContext(context.Background(), "go", "run", "./cmd/server", fmt.Sprintf("--port=%d", port))
 	cmd.Dir = sourceDir
 
 	// Capture server output
@@ -293,7 +307,9 @@ func startLocalServer(logger *log.Logger) (int, *exec.Cmd, error) {
 
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		stdout.Close() // Clean up the stdout pipe
+		if err := stdout.Close(); err != nil {
+			logger.Printf("failed to close stdout pipe: %v", err)
+		} // Clean up the stdout pipe
 		return 0, nil, fmt.Errorf("creating stderr pipe: %w", err)
 	}
 
@@ -327,7 +343,7 @@ func startLocalServer(logger *log.Logger) (int, *exec.Cmd, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), serverStartTimeout)
 	defer cancel()
 
-	ticker := time.NewTicker(100 * time.Millisecond)
+	ticker := time.NewTicker(serverPollInterval)
 	defer ticker.Stop()
 
 	for {
@@ -341,15 +357,18 @@ func startLocalServer(logger *log.Logger) (int, *exec.Cmd, error) {
 			return 0, nil, fmt.Errorf("server failed to start within %s", serverStartTimeout)
 		case <-ticker.C:
 			// Try to connect to the server
-			conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", port))
+			dialer := &net.Dialer{Timeout: serverPollInterval}
+			conn, err := dialer.DialContext(ctx, "tcp", fmt.Sprintf("localhost:%d", port))
 			if err == nil {
-				conn.Close()
+				if err := conn.Close(); err != nil {
+					logger.Printf("failed to close test connection: %v", err)
+				}
 				// Server is ready
 				return port, cmd, nil
 			}
 			// Check if process is still running
 			if cmd.ProcessState != nil {
-				return 0, nil, fmt.Errorf("server process exited unexpectedly")
+				return 0, nil, errors.New("server process exited unexpectedly")
 			}
 		}
 	}

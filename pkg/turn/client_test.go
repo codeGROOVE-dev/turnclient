@@ -70,6 +70,7 @@ func TestNewClient(t *testing.T) {
 	}
 }
 
+//nolint:gocognit // Test contains comprehensive test cases
 func TestClient_Check(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -164,7 +165,9 @@ func TestClient_Check(t *testing.T) {
 				// Send response
 				if tt.statusCode != 0 && tt.statusCode != http.StatusOK {
 					w.WriteHeader(tt.statusCode)
-					w.Write([]byte("error message"))
+					if _, err := w.Write([]byte("error message")); err != nil {
+						t.Errorf("failed to write error message: %v", err)
+					}
 					return
 				}
 
@@ -223,14 +226,16 @@ func TestClient_CheckWithAuth(t *testing.T) {
 
 		// Send success response
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(CheckResponse{
+		if err := json.NewEncoder(w).Encode(CheckResponse{
 			PRState: PRState{
 				UnblockAction:      map[string]Action{},
 				Checks:             Checks{},
 				UnresolvedComments: 0,
 				ReadyToMerge:       true,
 			},
-		})
+		}); err != nil {
+			t.Errorf("failed to encode response: %v", err)
+		}
 	}))
 	defer server.Close()
 

@@ -1,4 +1,6 @@
 // Package turn provides types and client functionality for the Turn API service.
+//
+//nolint:revive // API types need to be public
 package turn
 
 import (
@@ -38,7 +40,7 @@ type Checks struct {
 	Ignored int `json:"ignored"` // Number of failing tests we ignored
 }
 
-// StateTransition represents a state change based on an event
+// StateTransition represents a state change based on an event.
 type StateTransition struct {
 	FromState     string    `json:"from_state"`
 	ToState       string    `json:"to_state"`
