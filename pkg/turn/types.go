@@ -61,10 +61,11 @@ type PRState struct {
 	Size string `json:"size"` // XXS, XS, S, M, L, XL, XXL, INSANE
 
 	// Status
-	Draft         bool `json:"draft"`
-	ReadyToMerge  bool `json:"ready_to_merge"`
-	MergeConflict bool `json:"merge_conflict"`
-	Approved      bool `json:"approved"`
+	State         string `json:"state"` // PR state: "open" or "closed"
+	Draft         bool   `json:"draft"`
+	ReadyToMerge  bool   `json:"ready_to_merge"`
+	MergeConflict bool   `json:"merge_conflict"`
+	Approved      bool   `json:"approved"`
 
 	Tags []string `json:"tags"` // e.g., ["draft", "merge_conflict", "approved"]
 
