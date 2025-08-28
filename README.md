@@ -5,7 +5,7 @@ A command-line tool to check if a GitHub pull request is blocked by a specific u
 ## Installation
 
 ```bash
-go install github.com/ready-to-review/turnclient/cmd/checkurl@latest
+go install github.com/codeGROOVE-dev/turnclient/cmd/checkurl@latest
 ```
 
 ## Usage

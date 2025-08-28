@@ -22,7 +22,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ready-to-review/turnclient/pkg/turn"
+	"github.com/codeGROOVE-dev/turnclient/pkg/turn"
 )
 
 const (
