@@ -207,7 +207,7 @@ func (c *Client) Check(ctx context.Context, prURL, user string, updatedAt time.T
 		return nil, fmt.Errorf("unmarshal response: %w", err)
 	}
 
-	c.logger.Printf("check complete: %d actions assigned", len(result.PRState.UnblockAction))
+	c.logger.Printf("check complete: %d actions assigned", len(result.Analysis.NextAction))
 	return &result, nil
 }
 

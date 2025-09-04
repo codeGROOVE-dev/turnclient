@@ -5,6 +5,8 @@ package turn
 
 import (
 	"time"
+
+	"github.com/ready-to-review/prx/pkg/prx"
 )
 
 // CheckRequest represents a request to check if a PR is blocked by a user.
@@ -25,7 +27,7 @@ type Action struct {
 // LastActivity represents the most recent activity on a PR.
 type LastActivity struct {
 	Kind      string    `json:"kind"`      // "commit", "comment", "review", "review_comment"
-	Author    string    `json:"author"`    // Username who performed the action
+	Actor     string    `json:"actor"`     // Username who performed the action
 	Message   string    `json:"message"`   // Commit message or comment excerpt
 	Timestamp time.Time `json:"timestamp"` // When it happened
 }
@@ -49,10 +51,9 @@ type StateTransition struct {
 	LastEventKind string    `json:"last_event_kind"` // The last event kind seen before this transition
 }
 
-// PRState represents the current state of a PR.
-type PRState struct {
-	UnblockAction map[string]Action `json:"unblock_action"` // Next action expected from each user
-	UpdatedAt     time.Time         `json:"updated_at"`     // Last time the PR was updated
+// AnalysisState represents the computed analysis state of a PR.
+type AnalysisState struct {
+	NextAction map[string]Action `json:"next_action"` // Next action for each user to move the PR forward
 	LastActivity  LastActivity      `json:"last_activity"`  // Most recent activity
 
 	Checks             Checks `json:"checks"` // Check states
@@ -61,23 +62,22 @@ type PRState struct {
 	Size string `json:"size"` // XXS, XS, S, M, L, XL, XXL, INSANE
 
 	// Status
-	State         string `json:"state"` // PR state: "open" or "closed"
-	Draft         bool   `json:"draft"`
-	ReadyToMerge  bool   `json:"ready_to_merge"`
-	MergeConflict bool   `json:"merge_conflict"`
-	Approved      bool   `json:"approved"`
+	ReadyToMerge  bool `json:"ready_to_merge"`
+	MergeConflict bool `json:"merge_conflict"`
+	Approved      bool `json:"approved"`
 
 	Tags []string `json:"tags"` // e.g., ["draft", "merge_conflict", "approved"]
 
 	// State duration tracking
 	StateDurations   map[string]int    `json:"state_durations,omitempty"`   // Cumulative seconds spent in each state
-	CurrentState     string            `json:"current_state,omitempty"`     // Current state the PR is in
+	WorkflowState    string            `json:"workflow_state,omitempty"`    // Current workflow state (e.g. "PUBLISHED_WAITING_FOR_TESTS")
 	StateTransitions []StateTransition `json:"state_transitions,omitempty"` // List of state transitions
 }
 
 // CheckResponse represents the response from a PR check.
 type CheckResponse struct {
-	PRState   PRState   `json:"pr_state"`
-	Timestamp time.Time `json:"timestamp"` // Server generation time
-	Commit    string    `json:"commit"`    // Server version
+	PullRequest prx.PullRequest `json:"pull_request"`
+	Analysis    AnalysisState   `json:"analysis"`
+	Timestamp   time.Time       `json:"timestamp"` // Server generation time
+	Commit      string          `json:"commit"`    // Server version
 }
