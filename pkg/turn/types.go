@@ -6,7 +6,7 @@ package turn
 import (
 	"time"
 
-	"github.com/ready-to-review/prx/pkg/prx"
+	"github.com/codeGROOVE-dev/prx/pkg/prx"
 )
 
 // ActionKind represents the type of action required from a user.
@@ -61,16 +61,16 @@ type Checks struct {
 
 // StateTransition represents a state change based on an event.
 type StateTransition struct {
-	FromState     string         `json:"from_state"`
-	ToState       string         `json:"to_state"`
-	Timestamp     time.Time      `json:"timestamp"`
-	TriggerEvent  string         `json:"trigger_event"`
-	LastEventKind string         `json:"last_event_kind"` // The last event kind seen before this transition
+	FromState     string    `json:"from_state"`
+	ToState       string    `json:"to_state"`
+	Timestamp     time.Time `json:"timestamp"`
+	TriggerEvent  string    `json:"trigger_event"`
+	LastEventKind string    `json:"last_event_kind"` // The last event kind seen before this transition
 }
 
 // Analysis represents the computed analysis of a PR.
 type Analysis struct {
-	NextAction   map[string]Action `json:"next_action"`    // Next action for each user to move the PR forward
+	NextAction   map[string]Action `json:"next_action"`   // Next action for each user to move the PR forward
 	LastActivity LastActivity      `json:"last_activity"` // Most recent activity
 
 	Checks             Checks `json:"checks"` // Check states
@@ -86,9 +86,9 @@ type Analysis struct {
 	Tags []string `json:"tags"` // e.g., ["draft", "merge_conflict", "approved"]
 
 	// State duration tracking
-	SecondsInState   map[string]int     `json:"seconds_in_state,omitempty"`   // Cumulative seconds spent in each state (JS-friendly)
-	WorkflowState    string             `json:"workflow_state,omitempty"`     // Current workflow state
-	StateTransitions []StateTransition  `json:"state_transitions,omitempty"` // List of state transitions
+	SecondsInState   map[string]int    `json:"seconds_in_state,omitempty"`  // Cumulative seconds spent in each state (JS-friendly)
+	WorkflowState    string            `json:"workflow_state,omitempty"`    // Current workflow state
+	StateTransitions []StateTransition `json:"state_transitions,omitempty"` // List of state transitions
 }
 
 // CheckResponse represents the response from a PR check.
