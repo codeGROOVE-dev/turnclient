@@ -4,5 +4,5 @@ go 1.23.4
 
 require (
 	github.com/codeGROOVE-dev/retry v1.2.0
-	github.com/ready-to-review/prx v0.0.0-20250804193100-bb59ba5e4919
+	github.com/codeGROOVE-dev/prx v0.0.0-20250904224634-0e8509f54246
 )

@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	defaultBackend     = "https://turn.ready-to-review.dev"
+	defaultBackend     = "https://turn.v2.ready-to-review.dev"
 	requestTimeout     = 30 * time.Second
 	userAuthTimeout    = 10 * time.Second
 	serverStartTimeout = 5 * time.Second

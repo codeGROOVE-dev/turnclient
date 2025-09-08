@@ -33,21 +33,19 @@ func TestCheckRequestJSON(t *testing.T) {
 func TestCheckResponseJSON(t *testing.T) {
 	now := time.Now()
 	resp := CheckResponse{
-		PRState: PRState{
-			UnblockAction: map[string]Action{
+		Analysis: Analysis{
+			NextAction: map[string]Action{
 				"user1": {Kind: "REVIEW", Critical: true, Reason: "needs to review"},
 				"user2": {Kind: "APPROVE", Critical: false, Reason: "needs to approve"},
 			},
-			UpdatedAt: now,
 			LastActivity: LastActivity{
 				Kind:      "comment",
-				Author:    "testuser",
+				Actor:     "testuser",
 				Message:   "Please review",
 				Timestamp: now,
 			},
 			Checks:             Checks{Failing: 2},
 			UnresolvedComments: 1,
-			Draft:              false,
 			ReadyToMerge:       false,
 			Tags:               []string{"has_approval"},
 		},
@@ -66,38 +64,35 @@ func TestCheckResponseJSON(t *testing.T) {
 	}
 
 	// Verify core fields
-	if len(decoded.PRState.UnblockAction) != len(resp.PRState.UnblockAction) {
-		t.Errorf("UnblockAction length = %d, want %d", len(decoded.PRState.UnblockAction), len(resp.PRState.UnblockAction))
+	if len(decoded.Analysis.NextAction) != len(resp.Analysis.NextAction) {
+		t.Errorf("NextAction length = %d, want %d", len(decoded.Analysis.NextAction), len(resp.Analysis.NextAction))
 	}
-	for user, action := range resp.PRState.UnblockAction {
-		decodedAction := decoded.PRState.UnblockAction[user]
+	for user, action := range resp.Analysis.NextAction {
+		decodedAction := decoded.Analysis.NextAction[user]
 		if decodedAction.Kind != action.Kind {
-			t.Errorf("UnblockAction[%s].Kind = %s, want %s", user, decodedAction.Kind, action.Kind)
+			t.Errorf("NextAction[%s].Kind = %s, want %s", user, decodedAction.Kind, action.Kind)
 		}
 		if decodedAction.Critical != action.Critical {
-			t.Errorf("UnblockAction[%s].Critical = %v, want %v", user, decodedAction.Critical, action.Critical)
+			t.Errorf("NextAction[%s].Critical = %v, want %v", user, decodedAction.Critical, action.Critical)
 		}
 	}
 
 	// Verify recent activity
-	if decoded.PRState.LastActivity.Kind != resp.PRState.LastActivity.Kind {
-		t.Errorf("LastActivity.Kind = %s, want %s", decoded.PRState.LastActivity.Kind, resp.PRState.LastActivity.Kind)
+	if decoded.Analysis.LastActivity.Kind != resp.Analysis.LastActivity.Kind {
+		t.Errorf("LastActivity.Kind = %s, want %s", decoded.Analysis.LastActivity.Kind, resp.Analysis.LastActivity.Kind)
 	}
 
 	// Verify debugging info
-	if decoded.PRState.Checks.Failing != resp.PRState.Checks.Failing {
-		t.Errorf("Checks.Failing = %d, want %d", decoded.PRState.Checks.Failing, resp.PRState.Checks.Failing)
+	if decoded.Analysis.Checks.Failing != resp.Analysis.Checks.Failing {
+		t.Errorf("Checks.Failing = %d, want %d", decoded.Analysis.Checks.Failing, resp.Analysis.Checks.Failing)
 	}
-	if decoded.PRState.UnresolvedComments != resp.PRState.UnresolvedComments {
-		t.Errorf("UnresolvedComments = %d, want %d", decoded.PRState.UnresolvedComments, resp.PRState.UnresolvedComments)
+	if decoded.Analysis.UnresolvedComments != resp.Analysis.UnresolvedComments {
+		t.Errorf("UnresolvedComments = %d, want %d", decoded.Analysis.UnresolvedComments, resp.Analysis.UnresolvedComments)
 	}
 
 	// Verify flags
-	if decoded.PRState.ReadyToMerge != resp.PRState.ReadyToMerge {
-		t.Errorf("ReadyToMerge = %v, want %v", decoded.PRState.ReadyToMerge, resp.PRState.ReadyToMerge)
-	}
-	if decoded.PRState.Draft != resp.PRState.Draft {
-		t.Errorf("Draft = %v, want %v", decoded.PRState.Draft, resp.PRState.Draft)
+	if decoded.Analysis.ReadyToMerge != resp.Analysis.ReadyToMerge {
+		t.Errorf("ReadyToMerge = %v, want %v", decoded.Analysis.ReadyToMerge, resp.Analysis.ReadyToMerge)
 	}
 
 	// Verify server info

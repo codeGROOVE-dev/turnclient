@@ -9,6 +9,23 @@ import (
 	"github.com/ready-to-review/prx/pkg/prx"
 )
 
+// ActionKind represents the type of action required from a user.
+type ActionKind string
+
+// Action constants.
+const (
+	ActionResolveComments       ActionKind = "resolve_comments"
+	ActionPublishDraft          ActionKind = "publish_draft"
+	ActionRequestReviewers      ActionKind = "request_reviewers"
+	ActionReview                ActionKind = "review"
+	ActionReReview              ActionKind = "re_review"
+	ActionFixTests              ActionKind = "fix_tests"
+	ActionWaitForTestCompletion ActionKind = "wait_for_test_completion"
+	ActionRespondToComment      ActionKind = "respond_to_comment"
+	ActionResolveMergeConflict  ActionKind = "resolve_merge_conflict"
+	ActionMerge                 ActionKind = "merge"
+)
+
 // CheckRequest represents a request to check if a PR is blocked by a user.
 type CheckRequest struct {
 	URL       string    `json:"url"`
@@ -18,7 +35,7 @@ type CheckRequest struct {
 
 // Action represents an expected action from a specific user.
 type Action struct {
-	Kind        string     `json:"kind"`
+	Kind        ActionKind `json:"kind"`
 	Critical    bool       `json:"critical"`
 	Reason      string     `json:"reason"`
 	NotifyAfter *time.Time `json:"notify_after,omitempty"`
@@ -44,17 +61,17 @@ type Checks struct {
 
 // StateTransition represents a state change based on an event.
 type StateTransition struct {
-	FromState     string    `json:"from_state"`
-	ToState       string    `json:"to_state"`
-	Timestamp     time.Time `json:"timestamp"`
-	TriggerEvent  string    `json:"trigger_event"`
-	LastEventKind string    `json:"last_event_kind"` // The last event kind seen before this transition
+	FromState     string         `json:"from_state"`
+	ToState       string         `json:"to_state"`
+	Timestamp     time.Time      `json:"timestamp"`
+	TriggerEvent  string         `json:"trigger_event"`
+	LastEventKind string         `json:"last_event_kind"` // The last event kind seen before this transition
 }
 
-// AnalysisState represents the computed analysis state of a PR.
-type AnalysisState struct {
-	NextAction map[string]Action `json:"next_action"` // Next action for each user to move the PR forward
-	LastActivity  LastActivity      `json:"last_activity"`  // Most recent activity
+// Analysis represents the computed analysis of a PR.
+type Analysis struct {
+	NextAction   map[string]Action `json:"next_action"`    // Next action for each user to move the PR forward
+	LastActivity LastActivity      `json:"last_activity"` // Most recent activity
 
 	Checks             Checks `json:"checks"` // Check states
 	UnresolvedComments int    `json:"unresolved_comments"`
@@ -69,15 +86,15 @@ type AnalysisState struct {
 	Tags []string `json:"tags"` // e.g., ["draft", "merge_conflict", "approved"]
 
 	// State duration tracking
-	StateDurations   map[string]int    `json:"state_durations,omitempty"`   // Cumulative seconds spent in each state
-	WorkflowState    string            `json:"workflow_state,omitempty"`    // Current workflow state (e.g. "PUBLISHED_WAITING_FOR_TESTS")
-	StateTransitions []StateTransition `json:"state_transitions,omitempty"` // List of state transitions
+	SecondsInState   map[string]int     `json:"seconds_in_state,omitempty"`   // Cumulative seconds spent in each state (JS-friendly)
+	WorkflowState    string             `json:"workflow_state,omitempty"`     // Current workflow state
+	StateTransitions []StateTransition  `json:"state_transitions,omitempty"` // List of state transitions
 }
 
 // CheckResponse represents the response from a PR check.
 type CheckResponse struct {
 	PullRequest prx.PullRequest `json:"pull_request"`
-	Analysis    AnalysisState   `json:"analysis"`
+	Analysis    Analysis        `json:"analysis"`
 	Timestamp   time.Time       `json:"timestamp"` // Server generation time
 	Commit      string          `json:"commit"`    // Server version
 }

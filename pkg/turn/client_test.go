@@ -86,8 +86,8 @@ func TestClient_Check(t *testing.T) {
 			prURL:    "https://github.com/owner/repo/pull/123",
 			username: "testuser",
 			response: CheckResponse{
-				PRState: PRState{
-					UnblockAction:      map[string]Action{},
+				Analysis: Analysis{
+					NextAction:         map[string]Action{},
 					Checks:             Checks{},
 					UnresolvedComments: 0,
 					ReadyToMerge:       true,
@@ -101,8 +101,8 @@ func TestClient_Check(t *testing.T) {
 			prURL:    "https://github.com/owner/repo/pull/456",
 			username: "testuser",
 			response: CheckResponse{
-				PRState: PRState{
-					UnblockAction: map[string]Action{
+				Analysis: Analysis{
+					NextAction: map[string]Action{
 						"testuser": {Kind: "REVIEW", Critical: true, Reason: "needs to review"},
 					},
 					Checks:             Checks{},
@@ -202,11 +202,11 @@ func TestClient_Check(t *testing.T) {
 			}
 
 			if !tt.wantErr && result != nil {
-				if len(result.PRState.UnblockAction) != len(tt.response.PRState.UnblockAction) {
-					t.Errorf("UnblockAction length = %d, want %d", len(result.PRState.UnblockAction), len(tt.response.PRState.UnblockAction))
+				if len(result.Analysis.NextAction) != len(tt.response.Analysis.NextAction) {
+					t.Errorf("NextAction length = %d, want %d", len(result.Analysis.NextAction), len(tt.response.Analysis.NextAction))
 				}
-				if result.PRState.ReadyToMerge != tt.response.PRState.ReadyToMerge {
-					t.Errorf("ReadyToMerge = %v, want %v", result.PRState.ReadyToMerge, tt.response.PRState.ReadyToMerge)
+				if result.Analysis.ReadyToMerge != tt.response.Analysis.ReadyToMerge {
+					t.Errorf("ReadyToMerge = %v, want %v", result.Analysis.ReadyToMerge, tt.response.Analysis.ReadyToMerge)
 				}
 			}
 		})
@@ -227,8 +227,8 @@ func TestClient_CheckWithAuth(t *testing.T) {
 		// Send success response
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(CheckResponse{
-			PRState: PRState{
-				UnblockAction:      map[string]Action{},
+			Analysis: Analysis{
+				NextAction:         map[string]Action{},
 				Checks:             Checks{},
 				UnresolvedComments: 0,
 				ReadyToMerge:       true,
