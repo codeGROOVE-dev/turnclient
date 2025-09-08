@@ -1,2 +1,4 @@
 github.com/codeGROOVE-dev/retry v1.2.0 h1:xYpYPX2PQZmdHwuiQAGGzsBm392xIMl4nfMEFApQnu8=
 github.com/codeGROOVE-dev/retry v1.2.0/go.mod h1:8OgefgV1XP7lzX2PdKlCXILsYKuz6b4ZpHa/20iLi8E=
+github.com/ready-to-review/prx v0.0.0-20250804193100-bb59ba5e4919 h1:Y9Wbsa4XoAJkpLhVlwkyB9ie5LOEc60nqv0IdJwVqT8=
+github.com/ready-to-review/prx v0.0.0-20250804193100-bb59ba5e4919/go.mod h1:feCgHX30rIlQGX6m5LddaVll0KynIjTB/DbHENwAV3Q=

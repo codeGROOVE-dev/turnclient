@@ -218,10 +218,10 @@ func run(cfg config) error {
 		return fmt.Errorf("checking PR: %w", err)
 	}
 
-	blockingActions := len(result.PRState.UnblockAction)
+	blockingActions := len(result.Analysis.NextAction)
 	logger.Printf("check completed successfully: %d blocking actions found", blockingActions)
 	if blockingActions > 0 {
-		for user, action := range result.PRState.UnblockAction {
+		for user, action := range result.Analysis.NextAction {
 			logger.Printf("  - %s: %s (critical: %v, reason: %s)", user, action.Kind, action.Critical, action.Reason)
 		}
 	}
