@@ -14,16 +14,16 @@ type ActionKind string
 
 // Action constants.
 const (
-	ActionResolveComments       ActionKind = "resolve_comments"
-	ActionPublishDraft          ActionKind = "publish_draft"
-	ActionRequestReviewers      ActionKind = "request_reviewers"
-	ActionReview                ActionKind = "review"
-	ActionReReview              ActionKind = "re_review"
-	ActionFixTests              ActionKind = "fix_tests"
-	ActionWaitForTestCompletion ActionKind = "wait_for_test_completion"
-	ActionRespondToComment      ActionKind = "respond_to_comment"
-	ActionResolveMergeConflict  ActionKind = "resolve_merge_conflict"
-	ActionMerge                 ActionKind = "merge"
+	ActionResolveComments  ActionKind = "resolve_comments"
+	ActionPublishDraft     ActionKind = "publish_draft"
+	ActionRequestReviewers ActionKind = "request_reviewers"
+	ActionReview           ActionKind = "review"
+	ActionReReview         ActionKind = "re_review"
+	ActionFixTests         ActionKind = "fix_tests"
+	ActionTestsPending     ActionKind = "tests_pending"
+	ActionRespond          ActionKind = "respond"
+	ActionFixConflict      ActionKind = "fix_conflict"
+	ActionMerge            ActionKind = "merge"
 )
 
 // CheckRequest represents a request to check if a PR is blocked by a user.
