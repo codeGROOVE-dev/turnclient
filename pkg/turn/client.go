@@ -19,13 +19,15 @@ import (
 )
 
 const (
+	// DefaultBackend is the default backend URL for the Turn API service.
+	DefaultBackend = "https://turn.github.codegroove.app"
+
 	userAgent       = "turnclient/1.0"
 	maxResponseSize = 1024 * 1024 // 1MB
 	clientTimeout   = 30 * time.Second
 	retryAttempts   = 4 // 1 initial + 3 retries
 	logMaxLength    = 100
 	errorMaxLength  = 500
-	asciiDEL        = 127 // ASCII DEL character
 )
 
 // Client communicates with the Turn API.
@@ -38,7 +40,7 @@ type Client struct {
 	noCache    bool
 }
 
-// NewClient creates a new Turn API client.
+// NewClient creates a new Turn API client with the specified backend URL.
 // The baseURL should be a valid HTTP(S) URL without trailing slash.
 func NewClient(baseURL string) (*Client, error) {
 	if baseURL == "" {
@@ -54,16 +56,79 @@ func NewClient(baseURL string) (*Client, error) {
 		return nil, errors.New("base URL must use http or https")
 	}
 
-	// Normalize URL by removing trailing slash
-	baseURL = strings.TrimRight(baseURL, "/")
-
 	return &Client{
-		baseURL: baseURL,
+		baseURL: strings.TrimRight(baseURL, "/"),
 		httpClient: &http.Client{
 			Timeout: clientTimeout,
 		},
 		logger: log.New(io.Discard, "", 0),
 	}, nil
+}
+
+// NewDefaultClient creates a new Turn API client using the default backend.
+func NewDefaultClient() (*Client, error) {
+	return NewClient(DefaultBackend)
+}
+
+// Option configures a Client.
+type Option func(*Client)
+
+// WithBackend sets a custom backend URL.
+func WithBackend(baseURL string) Option {
+	return func(c *Client) {
+		c.baseURL = strings.TrimRight(baseURL, "/")
+	}
+}
+
+// WithLogger sets a custom logger.
+func WithLogger(logger *log.Logger) Option {
+	return func(c *Client) {
+		if logger != nil {
+			c.logger = logger
+		}
+	}
+}
+
+// WithAuthToken sets the GitHub authentication token.
+func WithAuthToken(token string) Option {
+	return func(c *Client) {
+		c.authToken = token
+	}
+}
+
+// WithNoCache enables or disables caching.
+func WithNoCache(noCache bool) Option {
+	return func(c *Client) {
+		c.noCache = noCache
+	}
+}
+
+// New creates a new Turn API client with options.
+// If no backend is specified via WithBackend, uses DefaultBackend.
+func New(opts ...Option) (*Client, error) {
+	c := &Client{
+		baseURL: DefaultBackend,
+		httpClient: &http.Client{
+			Timeout: clientTimeout,
+		},
+		logger: log.New(io.Discard, "", 0),
+	}
+
+	for _, opt := range opts {
+		opt(c)
+	}
+
+	// Validate the base URL
+	u, err := url.Parse(c.baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base URL: %w", err)
+	}
+
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return nil, errors.New("base URL must use http or https")
+	}
+
+	return c, nil
 }
 
 // SetAuthToken sets the GitHub authentication token.
@@ -96,7 +161,15 @@ func (c *Client) Check(ctx context.Context, prURL, user string, updatedAt time.T
 		return nil, errors.New("updated_at timestamp cannot be zero")
 	}
 
-	c.logger.Printf("checking PR %s for user %s", sanitizeForLog(prURL), sanitizeForLog(user))
+	// Truncate and sanitize for logging
+	truncatedURL := prURL
+	if len(truncatedURL) > logMaxLength {
+		runes := []rune(truncatedURL)
+		if len(runes) > logMaxLength {
+			truncatedURL = string(runes[:logMaxLength]) + "..."
+		}
+	}
+	c.logger.Printf("checking PR %s for user %s", truncatedURL, user)
 
 	req := CheckRequest{
 		URL:       prURL,
@@ -127,51 +200,7 @@ func (c *Client) Check(ctx context.Context, prURL, user string, updatedAt time.T
 
 	c.logger.Printf("sending request to %s", endpoint)
 
-	// Use retry for exponential backoff with jitter
-	var resp *http.Response
-
-	err = retry.Do(
-		func() error {
-			var err error
-			// Close previous response body if it exists
-			if resp != nil && resp.Body != nil {
-				if err := resp.Body.Close(); err != nil {
-					c.logger.Printf("failed to close previous response body: %v", err)
-				}
-			}
-			resp, err = c.httpClient.Do(httpReq) //nolint:bodyclose // closed in defer after retry loop
-			if err != nil {
-				return err
-			}
-
-			// Only retry on 5xx errors or 429 (rate limit)
-			if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
-				// Read and close the error response body
-				if _, err := io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseSize)); err != nil {
-					c.logger.Printf("failed to drain response body: %v", err)
-				}
-				if err := resp.Body.Close(); err != nil {
-					c.logger.Printf("failed to close response body: %v", err)
-				}
-				return fmt.Errorf("server returned status %d", resp.StatusCode)
-			}
-
-			return nil
-		},
-		retry.Context(ctx),
-		retry.Attempts(retryAttempts),
-		retry.Delay(100*time.Millisecond),
-		retry.MaxDelay(5*time.Second),
-		retry.DelayType(retry.BackOffDelay),
-		retry.MaxJitter(300*time.Millisecond),
-		retry.OnRetry(func(n uint, err error) {
-			c.logger.Printf("retrying request (attempt %d): %v", n+1, err)
-		}),
-		retry.RetryIf(func(_ error) bool {
-			// Always retry on network errors or specific status codes
-			return true
-		}),
-	)
+	resp, err := c.doWithRetry(ctx, httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("send request: %w", err)
 	}
@@ -226,51 +255,7 @@ func (c *Client) CurrentUser(ctx context.Context) (string, error) {
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Authorization", "Bearer "+c.authToken)
 
-	// Use retry for exponential backoff with jitter
-	var resp *http.Response
-
-	err = retry.Do(
-		func() error {
-			var err error
-			// Close previous response body if it exists
-			if resp != nil && resp.Body != nil {
-				if err := resp.Body.Close(); err != nil {
-					c.logger.Printf("failed to close previous response body: %v", err)
-				}
-			}
-			resp, err = c.httpClient.Do(req) //nolint:bodyclose // closed in defer after retry loop
-			if err != nil {
-				return err
-			}
-
-			// Only retry on 5xx errors or 429 (rate limit)
-			if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
-				// Read and close the error response body
-				if _, err := io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseSize)); err != nil {
-					c.logger.Printf("failed to drain response body: %v", err)
-				}
-				if err := resp.Body.Close(); err != nil {
-					c.logger.Printf("failed to close response body: %v", err)
-				}
-				return fmt.Errorf("github API returned status %d", resp.StatusCode)
-			}
-
-			return nil
-		},
-		retry.Context(ctx),
-		retry.Attempts(retryAttempts),
-		retry.Delay(100*time.Millisecond),
-		retry.MaxDelay(5*time.Second),
-		retry.DelayType(retry.BackOffDelay),
-		retry.MaxJitter(300*time.Millisecond),
-		retry.OnRetry(func(n uint, err error) {
-			c.logger.Printf("retrying GitHub API request (attempt %d): %v", n+1, err)
-		}),
-		retry.RetryIf(func(_ error) bool {
-			// Always retry on network errors or specific status codes
-			return true
-		}),
-	)
+	resp, err := c.doWithRetry(ctx, req)
 	if err != nil {
 		return "", fmt.Errorf("send request: %w", err)
 	}
@@ -303,42 +288,48 @@ func (c *Client) CurrentUser(ctx context.Context) (string, error) {
 	return user.Login, nil
 }
 
-// sanitizeForLog removes control characters to prevent log injection.
-func sanitizeForLog(s string) string {
-	// Truncate early to avoid processing unnecessary characters
-	truncated := false
-	if len(s) > logMaxLength {
-		// Find proper rune boundary
-		runes := []rune(s)
-		if len(runes) > logMaxLength {
-			s = string(runes[:logMaxLength])
-			truncated = true
-		}
-	}
+// doWithRetry performs an HTTP request with exponential backoff retry.
+func (c *Client) doWithRetry(ctx context.Context, req *http.Request) (*http.Response, error) {
+	var resp *http.Response
 
-	// Single pass for efficiency
-	var result strings.Builder
-	result.Grow(len(s) + 3) // Pre-allocate with space for "..."
-
-	for _, r := range s {
-		switch r {
-		case '\n':
-			result.WriteString("\\n")
-		case '\r':
-			result.WriteString("\\r")
-		case '\t':
-			result.WriteString("\\t")
-		default:
-			if r >= ' ' && r != asciiDEL {
-				result.WriteRune(r)
+	err := retry.Do(
+		func() error {
+			var err error
+			// Close previous response body if it exists
+			if resp != nil && resp.Body != nil {
+				if err := resp.Body.Close(); err != nil {
+					c.logger.Printf("failed to close previous response body: %v", err)
+				}
 			}
-			// Control characters are skipped
-		}
-	}
+			resp, err = c.httpClient.Do(req) //nolint:bodyclose // closed by caller
+			if err != nil {
+				return err
+			}
 
-	if truncated {
-		result.WriteString("...")
-	}
+			// Only retry on 5xx errors or 429 (rate limit)
+			if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
+				// Read and close the error response body
+				if _, err := io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseSize)); err != nil {
+					c.logger.Printf("failed to drain response body: %v", err)
+				}
+				if err := resp.Body.Close(); err != nil {
+					c.logger.Printf("failed to close response body: %v", err)
+				}
+				return fmt.Errorf("server returned status %d", resp.StatusCode)
+			}
 
-	return result.String()
+			return nil
+		},
+		retry.Context(ctx),
+		retry.Attempts(retryAttempts),
+		retry.Delay(100*time.Millisecond),
+		retry.MaxDelay(5*time.Second),
+		retry.DelayType(retry.BackOffDelay),
+		retry.MaxJitter(300*time.Millisecond),
+		retry.OnRetry(func(n uint, err error) {
+			c.logger.Printf("retrying request (attempt %d): %v", n+1, err)
+		}),
+	)
+
+	return resp, err
 }

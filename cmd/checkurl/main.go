@@ -26,7 +26,6 @@ import (
 )
 
 const (
-	defaultBackend     = "https://turn.v2.ready-to-review.dev"
 	requestTimeout     = 30 * time.Second
 	userAuthTimeout    = 10 * time.Second
 	serverStartTimeout = 5 * time.Second
@@ -38,7 +37,7 @@ var prURLPattern = regexp.MustCompile(`^/([^/]+)/([^/]+)/pull/(\d+)(?:/.*)?$`)
 
 func main() {
 	var cfg config
-	flag.StringVar(&cfg.backend, "backend", defaultBackend, "Backend server URL (use 'local' to launch local server)")
+	flag.StringVar(&cfg.backend, "backend", turn.DefaultBackend, "Backend server URL (use 'local' to launch local server)")
 	flag.StringVar(&cfg.username, "user", "", "GitHub username to check (defaults to current authenticated user)")
 	flag.BoolVar(&cfg.verbose, "verbose", false, "Enable verbose logging")
 	flag.BoolVar(&cfg.noCache, "no-cache", false, "Disable caching and fetch fresh data")
@@ -239,32 +238,6 @@ func run(cfg config) error {
 	return nil
 }
 
-// validatePRURL validates that the given URL is a valid GitHub PR URL.
-func validatePRURL(prURL string) error {
-	if prURL == "" {
-		return errors.New("pr URL cannot be empty")
-	}
-
-	u, err := url.Parse(prURL)
-	if err != nil {
-		return fmt.Errorf("invalid URL: %w", err)
-	}
-
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return errors.New("url must use http or https scheme")
-	}
-
-	if u.Host != "github.com" && u.Host != "www.github.com" {
-		return errors.New("url must be a GitHub URL")
-	}
-
-	if !prURLPattern.MatchString(u.Path) {
-		return errors.New("url must be a GitHub pull request URL (e.g., https://github.com/owner/repo/pull/123)")
-	}
-
-	return nil
-}
-
 // startLocalServer starts the turnserver as a subprocess on port 0 and returns the actual port.
 func startLocalServer(logger *log.Logger) (int, *exec.Cmd, error) {
 	// Server is expected to be at ../server relative to client
@@ -372,4 +345,30 @@ func startLocalServer(logger *log.Logger) (int, *exec.Cmd, error) {
 			}
 		}
 	}
+}
+
+// validatePRURL validates that the given URL is a valid GitHub PR URL.
+func validatePRURL(prURL string) error {
+	if prURL == "" {
+		return errors.New("pr URL cannot be empty")
+	}
+
+	u, err := url.Parse(prURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return errors.New("url must use http or https scheme")
+	}
+
+	if u.Host != "github.com" && u.Host != "www.github.com" {
+		return errors.New("url must be a GitHub URL")
+	}
+
+	if !prURLPattern.MatchString(u.Path) {
+		return errors.New("url must be a GitHub pull request URL (e.g., https://github.com/owner/repo/pull/123)")
+	}
+
+	return nil
 }
