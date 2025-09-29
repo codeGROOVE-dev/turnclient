@@ -291,23 +291,34 @@ func startLocalServer(logger *log.Logger) (int, *exec.Cmd, error) {
 		return 0, nil, fmt.Errorf("starting server: %w", err)
 	}
 
-	// Forward server output to logger
+	// Forward server stdout (which includes slog output) to stderr for visibility
 	go func() {
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {
-			logger.Printf("[server] %s", scanner.Text())
+			line := scanner.Text()
+			// Always print server output to stderr so errors are visible
+			fmt.Fprintf(os.Stderr, "[server] %s\n", line)
+			// Also log if verbose
+			logger.Printf("[server] %s", line)
 		}
 		if err := scanner.Err(); err != nil {
+			fmt.Fprintf(os.Stderr, "[server] stdout scanner error: %v\n", err)
 			logger.Printf("[server] stdout scanner error: %v", err)
 		}
 	}()
 
+	// Always forward stderr to stderr, not just in verbose mode
 	go func() {
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
-			logger.Printf("[server] %s", scanner.Text())
+			line := scanner.Text()
+			// Always print server errors to stderr so they're visible
+			fmt.Fprintf(os.Stderr, "[server] %s\n", line)
+			// Also log if verbose
+			logger.Printf("[server] %s", line)
 		}
 		if err := scanner.Err(); err != nil {
+			fmt.Fprintf(os.Stderr, "[server] stderr scanner error: %v\n", err)
 			logger.Printf("[server] stderr scanner error: %v", err)
 		}
 	}()
