@@ -21,6 +21,7 @@ const (
 	ActionReReview         ActionKind = "re_review"
 	ActionFixTests         ActionKind = "fix_tests"
 	ActionTestsPending     ActionKind = "tests_pending"
+	ActionRerunTests       ActionKind = "rerun_tests"
 	ActionRespond          ActionKind = "respond"
 	ActionFixConflict      ActionKind = "fix_conflict"
 	ActionMerge            ActionKind = "merge"
