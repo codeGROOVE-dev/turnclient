@@ -36,10 +36,10 @@ type CheckRequest struct {
 
 // Action represents an expected action from a specific user.
 type Action struct {
-	Kind        ActionKind `json:"kind"`
-	Critical    bool       `json:"critical"`
-	Reason      string     `json:"reason"`
-	NotifyAfter *time.Time `json:"notify_after,omitempty"`
+	Since    time.Time  `json:"since"`
+	Kind     ActionKind `json:"kind"`
+	Critical bool       `json:"critical"`
+	Reason   string     `json:"reason"`
 }
 
 // LastActivity represents the most recent activity on a PR.
