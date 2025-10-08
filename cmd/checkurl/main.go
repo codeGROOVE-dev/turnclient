@@ -37,10 +37,10 @@ var prURLPattern = regexp.MustCompile(`^/([^/]+)/([^/]+)/pull/(\d+)(?:/.*)?$`)
 
 func main() {
 	var cfg config
-	flag.StringVar(&cfg.backend, "backend", turn.DefaultBackend, "Backend server URL (use 'local' to launch local server)")
+	flag.StringVar(&cfg.backend, "backend", "local", "Backend server URL (use 'local' to launch local server)")
 	flag.StringVar(&cfg.username, "user", "", "GitHub username to check (defaults to current authenticated user)")
 	flag.BoolVar(&cfg.verbose, "verbose", false, "Enable verbose logging")
-	flag.BoolVar(&cfg.noCache, "no-cache", false, "Disable caching and fetch fresh data")
+	flag.BoolVar(&cfg.cache, "cache", false, "Enable caching (default is to fetch fresh data)")
 	flag.Parse()
 
 	if flag.NArg() != 1 {
@@ -66,7 +66,7 @@ type config struct {
 	username string
 	prURL    string
 	verbose  bool
-	noCache  bool
+	cache    bool
 }
 
 //nolint:gocognit,gocyclo,revive // Main function handles multiple concerns
@@ -183,7 +183,7 @@ func run(cfg config) error {
 			logger.Printf("auto-detected user: %s", cfg.username)
 		}
 	}
-	if cfg.noCache {
+	if !cfg.cache {
 		client.SetNoCache(true)
 	}
 
