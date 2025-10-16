@@ -19,6 +19,8 @@ const (
 	ActionRequestReviewers ActionKind = "request_reviewers"
 	ActionReview           ActionKind = "review"
 	ActionReReview         ActionKind = "re_review"
+	ActionReviewDiscussion ActionKind = "review_discussion" // Respond to discussion/questions without code changes
+	ActionApprove          ActionKind = "approve"           // Formally approve PR (for LGTM scenarios)
 	ActionFixTests         ActionKind = "fix_tests"
 	ActionTestsPending     ActionKind = "tests_pending"
 	ActionRerunTests       ActionKind = "rerun_tests"
