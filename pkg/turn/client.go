@@ -31,7 +31,8 @@ const (
 )
 
 // Client communicates with the Turn API.
-// All methods are safe for concurrent use.
+// Client methods are safe for concurrent use after initialization.
+// Set* methods should only be called during setup before concurrent use.
 type Client struct {
 	httpClient *http.Client
 	logger     *log.Logger
@@ -106,26 +107,25 @@ func WithNoCache(noCache bool) Option {
 // New creates a new Turn API client with options.
 // If no backend is specified via WithBackend, uses DefaultBackend.
 func New(opts ...Option) (*Client, error) {
-	c := &Client{
-		baseURL: DefaultBackend,
-		httpClient: &http.Client{
-			Timeout: clientTimeout,
-		},
-		logger: log.New(io.Discard, "", 0),
+	c, err := NewClient(DefaultBackend)
+	if err != nil {
+		return nil, err
 	}
 
+	originalURL := c.baseURL
 	for _, opt := range opts {
 		opt(c)
 	}
 
-	// Validate the base URL
-	u, err := url.Parse(c.baseURL)
-	if err != nil {
-		return nil, fmt.Errorf("invalid base URL: %w", err)
-	}
-
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return nil, errors.New("base URL must use http or https")
+	// Re-validate if backend was changed via options
+	if c.baseURL != originalURL {
+		u, err := url.Parse(c.baseURL)
+		if err != nil {
+			return nil, fmt.Errorf("invalid base URL: %w", err)
+		}
+		if u.Scheme != "http" && u.Scheme != "https" {
+			return nil, errors.New("base URL must use http or https")
+		}
 	}
 
 	return c, nil
@@ -162,14 +162,16 @@ func (c *Client) Check(ctx context.Context, prURL, user string, updatedAt time.T
 	}
 
 	// Truncate and sanitize for logging
-	truncatedURL := prURL
-	if len(truncatedURL) > logMaxLength {
-		runes := []rune(truncatedURL)
-		if len(runes) > logMaxLength {
-			truncatedURL = string(runes[:logMaxLength]) + "..."
+	logURL := prURL
+	if len(prURL) > logMaxLength {
+		rs := []rune(prURL)
+		if len(rs) > logMaxLength {
+			logURL = string(rs[:logMaxLength]) + "..."
+		} else {
+			logURL = prURL
 		}
 	}
-	c.logger.Printf("checking PR %s for user %s", truncatedURL, user)
+	c.logger.Printf("checking PR %s for user %s", logURL, user)
 
 	req := CheckRequest{
 		URL:       prURL,
@@ -183,24 +185,24 @@ func (c *Client) Check(ctx context.Context, prURL, user string, updatedAt time.T
 	}
 
 	endpoint := c.baseURL + "/v1/validate"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, &buf)
+	r, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, &buf)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("User-Agent", userAgent)
-	httpReq.Header.Set("Accept", "application/json")
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("User-Agent", userAgent)
+	r.Header.Set("Accept", "application/json")
 	if c.authToken != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+c.authToken)
+		r.Header.Set("Authorization", "Bearer "+c.authToken)
 	}
 	if c.noCache {
-		httpReq.Header.Set("Cache-Control", "no-cache")
+		r.Header.Set("Cache-Control", "no-cache")
 	}
 
 	c.logger.Printf("sending request to %s", endpoint)
 
-	resp, err := c.doWithRetry(ctx, httpReq)
+	resp, err := c.doWithRetry(ctx, r)
 	if err != nil {
 		return nil, fmt.Errorf("send request: %w", err)
 	}
@@ -220,15 +222,15 @@ func (c *Client) Check(ctx context.Context, prURL, user string, updatedAt time.T
 
 	if resp.StatusCode != http.StatusOK {
 		// For error responses, limit the body size in the error message
-		errorBody := string(body)
-		if len(errorBody) > errorMaxLength {
+		msg := string(body)
+		if len(body) > errorMaxLength {
 			// Truncate at rune boundary to avoid splitting UTF-8 characters
-			runes := []rune(errorBody)
-			if len(runes) > errorMaxLength {
-				errorBody = string(runes[:errorMaxLength]) + "... (truncated)"
+			rs := []rune(msg)
+			if len(rs) > errorMaxLength {
+				msg = string(rs[:errorMaxLength]) + "... (truncated)"
 			}
 		}
-		return nil, fmt.Errorf("api request failed with status %d: %s", resp.StatusCode, errorBody)
+		return nil, fmt.Errorf("api request failed with status %d: %s", resp.StatusCode, msg)
 	}
 
 	var result CheckResponse

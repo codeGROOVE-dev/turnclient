@@ -1,6 +1,3 @@
-// Package turn provides types and client functionality for the Turn API service.
-//
-//nolint:revive // API types need to be public
 package turn
 
 import (
@@ -40,16 +37,16 @@ type CheckRequest struct {
 type Action struct {
 	Since    time.Time  `json:"since"`
 	Kind     ActionKind `json:"kind"`
-	Critical bool       `json:"critical"`
 	Reason   string     `json:"reason"`
+	Critical bool       `json:"critical"`
 }
 
 // LastActivity represents the most recent activity on a PR.
 type LastActivity struct {
-	Kind      string    `json:"kind"`      // "commit", "comment", "review", "review_comment"
-	Actor     string    `json:"actor"`     // Username who performed the action
-	Message   string    `json:"message"`   // Commit message or comment excerpt
-	Timestamp time.Time `json:"timestamp"` // When it happened
+	Timestamp time.Time `json:"timestamp"`
+	Kind      string    `json:"kind"`
+	Actor     string    `json:"actor"`
+	Message   string    `json:"message"`
 }
 
 // Checks represents the status of CI checks for a pull request.
@@ -73,31 +70,24 @@ type StateTransition struct {
 
 // Analysis represents the computed analysis of a PR.
 type Analysis struct {
-	NextAction   map[string]Action `json:"next_action"`   // Next action for each user to move the PR forward
-	LastActivity LastActivity      `json:"last_activity"` // Most recent activity
-
-	Checks             Checks `json:"checks"` // Check states
-	UnresolvedComments int    `json:"unresolved_comments"`
-
-	Size string `json:"size"` // XXS, XS, S, M, L, XL, XXL, INSANE
-
-	// Status
-	ReadyToMerge  bool `json:"ready_to_merge"`
-	MergeConflict bool `json:"merge_conflict"`
-	Approved      bool `json:"approved"`
-
-	Tags []string `json:"tags"` // e.g., ["draft", "merge_conflict", "approved"]
-
-	// State duration tracking
-	SecondsInState   map[string]int    `json:"seconds_in_state,omitempty"`  // Cumulative seconds spent in each state (JS-friendly)
-	WorkflowState    string            `json:"workflow_state,omitempty"`    // Current workflow state
-	StateTransitions []StateTransition `json:"state_transitions,omitempty"` // List of state transitions
+	LastActivity       LastActivity      `json:"last_activity"`
+	NextAction         map[string]Action `json:"next_action"`
+	SecondsInState     map[string]int    `json:"seconds_in_state,omitempty"`
+	Size               string            `json:"size"`
+	WorkflowState      string            `json:"workflow_state,omitempty"`
+	Tags               []string          `json:"tags"`
+	StateTransitions   []StateTransition `json:"state_transitions,omitempty"`
+	Checks             Checks            `json:"checks"`
+	UnresolvedComments int               `json:"unresolved_comments"`
+	ReadyToMerge       bool              `json:"ready_to_merge"`
+	MergeConflict      bool              `json:"merge_conflict"`
+	Approved           bool              `json:"approved"`
 }
 
 // CheckResponse represents the response from a PR check.
 type CheckResponse struct {
+	Timestamp   time.Time       `json:"timestamp"`
+	Commit      string          `json:"commit"`
 	PullRequest prx.PullRequest `json:"pull_request"`
 	Analysis    Analysis        `json:"analysis"`
-	Timestamp   time.Time       `json:"timestamp"` // Server generation time
-	Commit      string          `json:"commit"`    // Server version
 }

@@ -69,7 +69,7 @@ type config struct {
 	cache    bool
 }
 
-//nolint:gocognit,gocyclo,revive // Main function handles multiple concerns
+//nolint:gocognit,gocyclo // Main function handles multiple concerns
 func run(cfg config) error {
 	var logger *log.Logger
 	if cfg.verbose {
@@ -81,8 +81,8 @@ func run(cfg config) error {
 	// Handle local backend mode
 	var serverCmd *exec.Cmd
 	interrupted := make(chan struct{}) // Signal handler notification
-	isLocalBackend := cfg.backend == "local"
-	if isLocalBackend {
+	local := cfg.backend == "local"
+	if local {
 		port, cmd, err := startLocalServer(logger)
 		if err != nil {
 			return fmt.Errorf("starting local server: %w", err)
@@ -118,13 +118,13 @@ func run(cfg config) error {
 		}()
 
 		// Set up signal handling
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+		sigs := make(chan os.Signal, 1)
+		signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
 		go func() {
-			<-sigChan
+			<-sigs
 			logger.Print("received interrupt signal")
 			close(interrupted) // Notify main goroutine
-			if isLocalBackend && serverCmd != nil && serverCmd.Process != nil {
+			if local && serverCmd != nil && serverCmd.Process != nil {
 				if err := serverCmd.Process.Signal(syscall.SIGTERM); err != nil {
 					logger.Printf("failed to send SIGTERM to server: %v", err)
 				}
@@ -260,11 +260,11 @@ func startLocalServer(logger *log.Logger) (int, *exec.Cmd, error) {
 	}() // Close so the server can bind to it
 
 	// Safe type assertion with error checking
-	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
+	addr, ok := listener.Addr().(*net.TCPAddr)
 	if !ok {
 		return 0, nil, fmt.Errorf("listener address is not TCP address: %T", listener.Addr())
 	}
-	port := tcpAddr.Port
+	port := addr.Port
 
 	// Start the server using go run to ensure latest code
 	logger.Printf("starting server on port %d", port)
@@ -291,37 +291,21 @@ func startLocalServer(logger *log.Logger) (int, *exec.Cmd, error) {
 		return 0, nil, fmt.Errorf("starting server: %w", err)
 	}
 
-	// Forward server stdout (which includes slog output) to stderr for visibility
-	go func() {
-		scanner := bufio.NewScanner(stdout)
+	// Forward server output to stderr for visibility
+	forwardOutput := func(r io.Reader, name string) {
+		scanner := bufio.NewScanner(r)
 		for scanner.Scan() {
 			line := scanner.Text()
-			// Always print server output to stderr so errors are visible
 			fmt.Fprintf(os.Stderr, "[server] %s\n", line)
-			// Also log if verbose
 			logger.Printf("[server] %s", line)
 		}
 		if err := scanner.Err(); err != nil {
-			fmt.Fprintf(os.Stderr, "[server] stdout scanner error: %v\n", err)
-			logger.Printf("[server] stdout scanner error: %v", err)
+			fmt.Fprintf(os.Stderr, "[server] %s scanner error: %v\n", name, err)
+			logger.Printf("[server] %s scanner error: %v", name, err)
 		}
-	}()
-
-	// Always forward stderr to stderr, not just in verbose mode
-	go func() {
-		scanner := bufio.NewScanner(stderr)
-		for scanner.Scan() {
-			line := scanner.Text()
-			// Always print server errors to stderr so they're visible
-			fmt.Fprintf(os.Stderr, "[server] %s\n", line)
-			// Also log if verbose
-			logger.Printf("[server] %s", line)
-		}
-		if err := scanner.Err(); err != nil {
-			fmt.Fprintf(os.Stderr, "[server] stderr scanner error: %v\n", err)
-			logger.Printf("[server] stderr scanner error: %v", err)
-		}
-	}()
+	}
+	go forwardOutput(stdout, "stdout")
+	go forwardOutput(stderr, "stderr")
 
 	// Wait for server to be ready
 	ctx, cancel := context.WithTimeout(context.Background(), serverStartTimeout)
