@@ -34,11 +34,12 @@ const (
 // Client methods are safe for concurrent use after initialization.
 // Set* methods should only be called during setup before concurrent use.
 type Client struct {
-	httpClient *http.Client
-	logger     *log.Logger
-	baseURL    string
-	authToken  string
-	noCache    bool
+	httpClient    *http.Client
+	logger        *log.Logger
+	baseURL       string
+	authToken     string
+	noCache       bool
+	includeEvents bool
 }
 
 // NewClient creates a new Turn API client with the specified backend URL.
@@ -148,6 +149,11 @@ func (c *Client) SetNoCache(noCache bool) {
 	c.noCache = noCache
 }
 
+// IncludeEvents enables including the full event list in check responses.
+func (c *Client) IncludeEvents() {
+	c.includeEvents = true
+}
+
 // Check validates a PR state at the given URL for the specified user.
 // The updatedAt timestamp is used for caching.
 func (c *Client) Check(ctx context.Context, prURL, user string, updatedAt time.Time) (*CheckResponse, error) {
@@ -174,9 +180,10 @@ func (c *Client) Check(ctx context.Context, prURL, user string, updatedAt time.T
 	c.logger.Printf("checking PR %s for user %s", logURL, user)
 
 	req := CheckRequest{
-		URL:       prURL,
-		UpdatedAt: updatedAt,
-		User:      user,
+		URL:           prURL,
+		UpdatedAt:     updatedAt,
+		User:          user,
+		IncludeEvents: c.includeEvents,
 	}
 
 	var buf bytes.Buffer

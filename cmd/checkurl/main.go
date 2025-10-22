@@ -41,6 +41,7 @@ func main() {
 	flag.StringVar(&cfg.username, "user", "", "GitHub username to check (defaults to current authenticated user)")
 	flag.BoolVar(&cfg.verbose, "verbose", false, "Enable verbose logging")
 	flag.BoolVar(&cfg.cache, "cache", false, "Enable caching (default is to fetch fresh data)")
+	flag.BoolVar(&cfg.events, "events", false, "Include full event list in response")
 	flag.Parse()
 
 	if flag.NArg() != 1 {
@@ -67,6 +68,7 @@ type config struct {
 	prURL    string
 	verbose  bool
 	cache    bool
+	events   bool
 }
 
 //nolint:gocognit,gocyclo // Main function handles multiple concerns
@@ -185,6 +187,9 @@ func run(cfg config) error {
 	}
 	if !cfg.cache {
 		client.SetNoCache(true)
+	}
+	if cfg.events {
+		client.IncludeEvents()
 	}
 
 	// Create a cancellable context for the request
