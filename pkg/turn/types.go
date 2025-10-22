@@ -28,9 +28,10 @@ const (
 
 // CheckRequest represents a request to check if a PR is blocked by a user.
 type CheckRequest struct {
-	URL       string    `json:"url"`
-	UpdatedAt time.Time `json:"updated_at"` // Last known update time of the PR (required)
-	User      string    `json:"user"`
+	URL           string    `json:"url"`
+	UpdatedAt     time.Time `json:"updated_at"` // Last known update time of the PR (required)
+	User          string    `json:"user"`
+	IncludeEvents bool      `json:"include_events,omitempty"` // Include full event list from prx (defaults to false)
 }
 
 // Action represents an expected action from a specific user.
@@ -90,4 +91,5 @@ type CheckResponse struct {
 	Commit      string          `json:"commit"`
 	PullRequest prx.PullRequest `json:"pull_request"`
 	Analysis    Analysis        `json:"analysis"`
+	Events      []prx.Event     `json:"events,omitempty"` // Full event list from prx (only included if requested)
 }
