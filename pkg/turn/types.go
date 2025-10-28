@@ -26,6 +26,21 @@ const (
 	ActionMerge            ActionKind = "merge"
 )
 
+// WorkflowState represents the current state of a PR in the workflow.
+type WorkflowState string
+
+// Workflow state constants for tracking time spent in each state.
+const (
+	StateNewlyPublished             WorkflowState = "NEWLY_PUBLISHED"
+	StateInDraft                    WorkflowState = "IN_DRAFT"
+	StatePublishedWaitingForTests   WorkflowState = "PUBLISHED_WAITING_FOR_TESTS"
+	StateTestedWaitingForAssignment WorkflowState = "TESTED_WAITING_FOR_ASSIGNMENT"
+	StateAssignedWaitingForReview   WorkflowState = "ASSIGNED_WAITING_FOR_REVIEW"
+	StateReviewedNeedsRefinement    WorkflowState = "REVIEWED_NEEDS_REFINEMENT"
+	StateRefinedWaitingForApproval  WorkflowState = "REFINED_WAITING_FOR_APPROVAL"
+	StateApprovedWaitingForMerge    WorkflowState = "APPROVED_WAITING_FOR_MERGE"
+)
+
 // CheckRequest represents a request to check if a PR is blocked by a user.
 type CheckRequest struct {
 	URL           string    `json:"url"`
