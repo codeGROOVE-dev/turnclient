@@ -34,6 +34,7 @@ const (
 	StateNewlyPublished             WorkflowState = "NEWLY_PUBLISHED"
 	StateInDraft                    WorkflowState = "IN_DRAFT"
 	StatePublishedWaitingForTests   WorkflowState = "PUBLISHED_WAITING_FOR_TESTS"
+	StateTestedWaitingForFixes      WorkflowState = "TESTED_WAITING_FOR_FIXES"
 	StateTestedWaitingForAssignment WorkflowState = "TESTED_WAITING_FOR_ASSIGNMENT"
 	StateAssignedWaitingForReview   WorkflowState = "ASSIGNED_WAITING_FOR_REVIEW"
 	StateReviewedNeedsRefinement    WorkflowState = "REVIEWED_NEEDS_REFINEMENT"
