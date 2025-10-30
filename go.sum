@@ -1,4 +1,4 @@
-github.com/codeGROOVE-dev/prx v0.0.0-20251027012315-7b273aabfc7d h1:kUaCKFRxWFrWEyl4fVHi+eY/D5tKhBU29a8YbQyihEk=
-github.com/codeGROOVE-dev/prx v0.0.0-20251027012315-7b273aabfc7d/go.mod h1:7qLbi18baOyS8yO/6/64SBIqtyzSzLFdsDST15NPH3w=
-github.com/codeGROOVE-dev/retry v1.2.0 h1:xYpYPX2PQZmdHwuiQAGGzsBm392xIMl4nfMEFApQnu8=
-github.com/codeGROOVE-dev/retry v1.2.0/go.mod h1:8OgefgV1XP7lzX2PdKlCXILsYKuz6b4ZpHa/20iLi8E=
+github.com/codeGROOVE-dev/prx v0.0.0-20251030022101-ff906928a1e4 h1:DSuoUwP3oyR4cHrX0cUh9c7CtYjXNIcyCmqpIwHilIU=
+github.com/codeGROOVE-dev/prx v0.0.0-20251030022101-ff906928a1e4/go.mod h1:FEy3gz9IYDXWnKWkoDSL+pWu6rujxbBSrF4w5A8QSK0=
+github.com/codeGROOVE-dev/retry v1.3.0 h1:/+ipAWRJLL6y1R1vprYo0FSjSBvH6fE5j9LKXjpD54g=
+github.com/codeGROOVE-dev/retry v1.3.0/go.mod h1:8OgefgV1XP7lzX2PdKlCXILsYKuz6b4ZpHa/20iLi8E=
