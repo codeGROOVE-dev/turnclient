@@ -50,32 +50,6 @@ LINTERS += yamllint-lint
 yamllint-lint: $(YAMLLINT_BIN)
 	PYTHONPATH=$(YAMLLINT_ROOT)/dist $(YAMLLINT_ROOT)/dist/bin/yamllint .
 
-BIOME_VERSION ?= 2.2.6
-BIOME_BIN := $(LINT_ROOT)/out/linters/biome-$(BIOME_VERSION)-$(LINT_ARCH)
-BIOME_CONFIG := $(LINT_ROOT)/biome.json
-
-# Map architecture names for Biome downloads
-BIOME_ARCH := $(LINT_ARCH)
-ifeq ($(LINT_ARCH),x86_64)
-	BIOME_ARCH := x64
-endif
-
-$(BIOME_BIN):
-	mkdir -p $(LINT_ROOT)/out/linters
-	rm -rf $(LINT_ROOT)/out/linters/biome-*
-	curl -sSfL -o $@ https://github.com/biomejs/biome/releases/download/%40biomejs%2Fbiome%40$(BIOME_VERSION)/biome-$(LINT_OS_LOWER)-$(BIOME_ARCH) \
-		|| echo "Unable to fetch biome for $(LINT_OS_LOWER)/$(BIOME_ARCH), falling back to local install"
-	test -f $@ || printf "#!/usr/bin/env biome\n" > $@
-	chmod u+x $@
-
-LINTERS += biome-lint
-biome-lint: $(BIOME_BIN)
-	$(BIOME_BIN) check --config-path=$(BIOME_CONFIG) .
-
-FIXERS += biome-fix
-biome-fix: $(BIOME_BIN)
-	$(BIOME_BIN) check --write --config-path=$(BIOME_CONFIG) .
-
 .PHONY: _lint $(LINTERS)
 _lint:
 	@exit_code=0; \
