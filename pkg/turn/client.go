@@ -22,7 +22,7 @@ const (
 	// DefaultBackend is the default backend URL for the Turn API service.
 	DefaultBackend = "https://turn.github.codegroove.app"
 
-	userAgent       = "turnclient/1.0"
+	userAgent       = "turnclient/1.1"
 	maxResponseSize = 1024 * 1024 // 1MB
 	clientTimeout   = 30 * time.Second
 	retryAttempts   = 4 // 1 initial + 3 retries
@@ -181,7 +181,7 @@ func (c *Client) Check(ctx context.Context, prURL, user string, updatedAt time.T
 
 	req := CheckRequest{
 		URL:           prURL,
-		UpdatedAt:     updatedAt,
+		UpdatedAt:     updatedAt.UTC(),
 		User:          user,
 		IncludeEvents: c.includeEvents,
 	}
@@ -190,6 +190,8 @@ func (c *Client) Check(ctx context.Context, prURL, user string, updatedAt time.T
 	if err := json.NewEncoder(&buf).Encode(req); err != nil {
 		return nil, fmt.Errorf("encode request: %w", err)
 	}
+
+	c.logger.Printf("request JSON: %s", buf.String())
 
 	endpoint := c.baseURL + "/v1/validate"
 	r, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, &buf)
