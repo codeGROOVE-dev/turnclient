@@ -1,4 +1,8 @@
-github.com/codeGROOVE-dev/prx v0.0.0-20251030022101-ff906928a1e4 h1:DSuoUwP3oyR4cHrX0cUh9c7CtYjXNIcyCmqpIwHilIU=
-github.com/codeGROOVE-dev/prx v0.0.0-20251030022101-ff906928a1e4/go.mod h1:FEy3gz9IYDXWnKWkoDSL+pWu6rujxbBSrF4w5A8QSK0=
+github.com/codeGROOVE-dev/prx v0.0.0-20251209215844-e78bf2c9ee2a h1:U+Ox6lW+W0ojcPva4rLBno73ZIOfVjl0qu142LO4JMY=
+github.com/codeGROOVE-dev/prx v0.0.0-20251209215844-e78bf2c9ee2a/go.mod h1:tBh77XZQxCyzMUB+6yjlayMbE9g6JRpBjGbAntfzk0M=
 github.com/codeGROOVE-dev/retry v1.3.0 h1:/+ipAWRJLL6y1R1vprYo0FSjSBvH6fE5j9LKXjpD54g=
 github.com/codeGROOVE-dev/retry v1.3.0/go.mod h1:8OgefgV1XP7lzX2PdKlCXILsYKuz6b4ZpHa/20iLi8E=
+github.com/codeGROOVE-dev/sfcache v1.4.2 h1:F1fXicO/B2O2N7KuJRkaHqJCHgxYXls7aQtSH8wUxH0=
+github.com/codeGROOVE-dev/sfcache v1.4.2/go.mod h1:ksV5Y1RwKmOPZZiV0zXpsBOENGUCgO0fVgr/P8f/DJM=
+github.com/codeGROOVE-dev/sfcache/pkg/store/localfs v1.4.2 h1:EF0RxIee8DvugvTmwinSqt5OHFEykol3kZcxzcS62uE=
+github.com/codeGROOVE-dev/sfcache/pkg/store/localfs v1.4.2/go.mod h1:D/Y1sYT1m3VXHZRkQjHjFwtKQOsb587QZP/GtfJEDSE=

@@ -42,6 +42,7 @@ func main() {
 	flag.BoolVar(&cfg.verbose, "verbose", false, "Enable verbose logging")
 	flag.BoolVar(&cfg.cache, "cache", false, "Enable caching (default is to fetch fresh data)")
 	flag.BoolVar(&cfg.events, "events", false, "Include full event list in response")
+	flag.StringVar(&cfg.ref, "ref", "", "Reference time for query (RFC3339 format, e.g., 2025-03-16T06:18:08Z)")
 	flag.Parse()
 
 	if flag.NArg() != 1 {
@@ -66,6 +67,7 @@ type config struct {
 	backend  string
 	username string
 	prURL    string
+	ref      string
 	verbose  bool
 	cache    bool
 	events   bool
@@ -78,6 +80,17 @@ func run(cfg config) error {
 		logger = log.New(os.Stderr, "", log.LstdFlags)
 	} else {
 		logger = log.New(io.Discard, "", 0)
+	}
+
+	// Parse reference time if provided
+	refTime := time.Now()
+	if cfg.ref != "" {
+		var err error
+		refTime, err = time.Parse(time.RFC3339, cfg.ref)
+		if err != nil {
+			return fmt.Errorf("invalid reference time %q: %w (expected RFC3339 format like 2025-03-16T06:18:08Z)", cfg.ref, err)
+		}
+		logger.Printf("using reference time: %s", refTime.Format(time.RFC3339))
 	}
 
 	// Handle local backend mode
@@ -209,7 +222,7 @@ func run(cfg config) error {
 	// Make the request
 	logger.Print("sending check request to backend")
 	start := time.Now()
-	result, err := client.Check(ctx, cfg.prURL, cfg.username, time.Now())
+	result, err := client.Check(ctx, cfg.prURL, cfg.username, refTime)
 	elapsed := time.Since(start)
 	logger.Printf("check request completed in %v", elapsed)
 	if err != nil {

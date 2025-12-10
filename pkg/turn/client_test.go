@@ -152,8 +152,8 @@ func TestClient_Check(t *testing.T) {
 				if r.Header.Get("Content-Type") != "application/json" {
 					t.Errorf("expected Content-Type: application/json, got %s", r.Header.Get("Content-Type"))
 				}
-				if r.Header.Get("User-Agent") != "turnclient/1.0" {
-					t.Errorf("expected User-Agent: turnclient/1.0, got %s", r.Header.Get("User-Agent"))
+				if r.Header.Get("User-Agent") != "turnclient/1.1" {
+					t.Errorf("expected User-Agent: turnclient/1.1, got %s", r.Header.Get("User-Agent"))
 				}
 
 				// Decode request body
