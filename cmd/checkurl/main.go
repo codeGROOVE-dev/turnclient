@@ -40,7 +40,7 @@ func main() {
 	flag.StringVar(&cfg.backend, "backend", "local", "Backend server URL (use 'local' to launch local server)")
 	flag.StringVar(&cfg.username, "user", "", "GitHub username to check (defaults to current authenticated user)")
 	flag.BoolVar(&cfg.verbose, "verbose", false, "Enable verbose logging")
-	flag.BoolVar(&cfg.cache, "cache", false, "Enable caching (default is to fetch fresh data)")
+	flag.BoolVar(&cfg.cache, "cache", true, "Enable caching")
 	flag.BoolVar(&cfg.events, "events", false, "Include full event list in response")
 	flag.StringVar(&cfg.ref, "ref", "", "Reference time for query (RFC3339 format, e.g., 2025-03-16T06:18:08Z)")
 	flag.Parse()

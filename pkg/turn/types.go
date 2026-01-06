@@ -105,7 +105,7 @@ type Analysis struct {
 type CheckResponse struct {
 	Timestamp   time.Time       `json:"timestamp"`
 	Commit      string          `json:"commit"`
+	Events      []prx.Event     `json:"events,omitempty"`
 	PullRequest prx.PullRequest `json:"pull_request"`
 	Analysis    Analysis        `json:"analysis"`
-	Events      []prx.Event     `json:"events,omitempty"` // Full event list from prx (only included if requested)
 }
