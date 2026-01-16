@@ -67,3 +67,7 @@ fix:
 	exit $$exit_code
 
 # END: lint-install .
+
+.PHONY: test
+test:
+	go test -race ./...
