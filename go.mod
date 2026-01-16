@@ -3,7 +3,7 @@ module github.com/codeGROOVE-dev/turnclient
 go 1.25.4
 
 require (
-	github.com/codeGROOVE-dev/prx v0.0.0-20260115220920-c4be235c551a
+	github.com/codeGROOVE-dev/prx v0.0.0-20260116001546-f6dbdf2336ed
 	github.com/codeGROOVE-dev/retry v1.3.1
 )
 
