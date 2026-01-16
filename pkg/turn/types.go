@@ -103,9 +103,12 @@ type Analysis struct {
 
 // CheckResponse represents the response from a PR check.
 type CheckResponse struct {
-	Timestamp   time.Time       `json:"timestamp"`
-	Commit      string          `json:"commit"`
-	Events      []prx.Event     `json:"events,omitempty"`
-	PullRequest prx.PullRequest `json:"pull_request"`
-	Analysis    Analysis        `json:"analysis"`
+	Timestamp            time.Time       `json:"timestamp"`
+	Commit               string          `json:"commit"`
+	Events               []prx.Event     `json:"events,omitempty"`
+	PullRequest          prx.PullRequest `json:"pull_request"`
+	Analysis             Analysis        `json:"analysis"`
+	Tier                 string          `json:"tier,omitempty"`                   // GitHub Marketplace tier (free/pro/flock), only set for GitHub
+	PrivateReposEnabled  bool            `json:"private_repos_enabled,omitempty"`  // Whether user can access private repos
+	TierEnforcementActive bool           `json:"tier_enforcement_active"`          // Whether tier restrictions are enforced
 }
